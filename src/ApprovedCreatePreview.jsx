@@ -2901,19 +2901,19 @@ function LucianaV1Info({ onCancel, onAccept }) {
         </div>
         <div className="persona-modal-body" style={{ maxHeight: '62vh', overflowY: 'auto' }}>
           <p style={{ margin: '0 0 14px', lineHeight: 1.6 }}>
-            <strong>Tú subes o grabas un audio con tu voz</strong> (puede durar hasta 4:45).
-            Nosotros hacemos una <strong>canción nueva</strong> y la canta una voz que
-            <strong> suena como la tuya</strong>.
+            <strong>Tú subes o grabas un audio cantando</strong> (puede durar hasta 4:45).
+            El motor lo <strong>vuelve a cantar con tu timbre</strong>, respetando
+            <strong> tu melodía y tu fraseo</strong>, y con el estilo que elijas.
           </p>
           <p style={{ margin: '0 0 16px', lineHeight: 1.6, color: '#94a3b8' }}>
-            No es un cover: <strong>no</strong> rehacemos tu canción ni copiamos la de otro artista.
+            Sirve para rehacer una grabación tuya en otro género, o para ponerle tu voz a una letra.
           </p>
 
           <div style={{ margin: '0 0 14px', padding: '12px 14px', borderRadius: 12, background: 'rgba(34,211,238,.08)', border: '1px solid rgba(34,211,238,.25)' }}>
             <strong style={{ display: 'block', marginBottom: 6 }}>Úsalo cuando…</strong>
             <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+              <li>Quieres <strong>rehacer en otro género</strong> una grabación tuya, respetando tu forma de cantar.</li>
               <li>Tienes la letra (o una idea) y quieres <strong>oír cómo suena con tu voz</strong>.</li>
-              <li>Quieres una canción <strong>nueva</strong> con tu timbre, sin pasar por el Clonador.</li>
               <li>Le quieres regalar a alguien una canción cantada por ti.</li>
             </ul>
           </div>
@@ -2922,7 +2922,7 @@ function LucianaV1Info({ onCancel, onAccept }) {
             <strong style={{ display: 'block', marginBottom: 6 }}>No lo uses para…</strong>
             <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
               <li>Imitar la voz de un cantante famoso (no está permitido).</li>
-              <li>Rehacer una canción que ya existe (este motor no hace eso).</li>
+              <li>Subir canciones de otros artistas (derechos de autor).</li>
             </ul>
           </div>
 
@@ -3701,7 +3701,7 @@ function StartStep({ data, setData, setToast, handlers }) {
           </button>
           <button className={data.model === "LucIAna V1" ? "decision-card selected" : "decision-card"} onClick={() => setLucianaInfoOpen(true)}>
             <span className="choice-icon"><MagicWand size={28} /></span>
-            <span><strong>Mi voz (LucIAna V1)</strong><small>Canción nueva cantada con tu voz clonada · no cover</small></span>
+            <span><strong>Mi voz (LucIAna V1)</strong><small>Canta con tu voz y respeta tu fraseo</small></span>
             <InfoTip title="LucIAna V1">Usa el audio que subes como muestra de tu voz. No se clona ni se guarda: se usa en cada canción.</InfoTip>
             <span className="radio" />
           </button>
@@ -3720,9 +3720,9 @@ function StartStep({ data, setData, setToast, handlers }) {
           <div className="selection-summary" style={{ alignItems: 'flex-start', marginBottom: 10 }}>
             <Info size={18} style={{ flexShrink: 0, marginTop: 2 }} />
             <span style={{ fontSize: 13, lineHeight: 1.5 }}>
-              <strong>Importante:</strong> con <strong>LucIAna V1</strong> tu audio se usa solo como <strong>muestra de tu voz</strong>.
-              No rehacemos tu canción ni su letra: se crea una <strong>canción nueva</strong> con la letra y el estilo que elijas,
-              cantada con tu voz.
+              <strong>Importante:</strong> con <strong>LucIAna V1</strong> subes un audio con tu voz y el motor
+              lo vuelve a cantar <strong>con tu timbre</strong>, respetando <strong>tu melodía y tu fraseo</strong>,
+              con el estilo que elijas. Si no subes audio, no funciona.
             </span>
           </div>
           <div className="audio-choice-switcher">
@@ -4646,7 +4646,7 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
                 {data.model === name && <Check size={18} />}
               </button>
             ))}
-            <p><Info size={16} /> LucIAna V1 usa tu voz para una canción nueva. No rehace tu canción original.</p>
+            <p><Info size={16} /> LucIAna V1 canta con tu voz y respeta tu melodía y fraseo.</p>
           </div>}
         </div>
         )}
