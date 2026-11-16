@@ -271,6 +271,8 @@ const models = [
   ["Suno V6", "Calidad total · Ideal para clonar voz"],
   ["Suno V6 Wild", "Estilos más creativos y arriesgados"],
   ["Suno V6 Mini", "Más rápido · Bueno para pruebas rápidas"],
+  // Motor propio de LucIAna (Sonauto por dentro). Visible pero aún no activo.
+  ["LucIAna V1", "Cover y canta con tu voz · 1 toma"],
 ];
 const VALID_MODEL_NAMES = new Set(models.map(([name]) => name));
 const normalizeModelName = (m) => VALID_MODEL_NAMES.has(m) ? m : "Suno V6";
@@ -278,11 +280,13 @@ const MODEL_TO_PROVIDER = {
   'Suno V6': 'suno',
   'Suno V6 Wild': 'suno',
   'Suno V6 Mini': 'suno',
+  'LucIAna V1': 'treblo',
 };
 const MODEL_PROVIDER_CODE = {
   'Suno V6': { provider: 'suno', model: 'V6' },
   'Suno V6 Wild': { provider: 'suno', model: 'V6_WILD' },
   'Suno V6 Mini': { provider: 'suno', model: 'V6_MINI' },
+  'LucIAna V1': { provider: 'treblo', model: 'V3' },
 };
 /**
  * Devuelve el costo en créditos según el modelo seleccionado.
@@ -4530,7 +4534,14 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
           {modelOpen && <div className="model-menu">
             <div className="model-group-label">Suno</div>
             {models.filter(([name]) => MODEL_TO_PROVIDER[name] === 'suno').map(([name, detail]) => <button key={name} onClick={() => { setData({ ...data, model: name }); setModelOpen(false); }} className={data.model === name ? "chosen" : ""}><span><strong>{name}</strong><small>{detail}</small></span>{data.model === name && <Check size={18} />}</button>)}
-            <p><Info size={16} /> Más motores próximamente</p>
+            <div className="model-group-label">LucIAna</div>
+            {models.filter(([name]) => MODEL_TO_PROVIDER[name] === 'treblo').map(([name, detail]) => (
+              <button key={name} type="button" disabled title="Disponible muy pronto" className="soon">
+                <span><strong>{name}</strong><small>{detail}</small></span>
+                <span className="soon-tag">PRONTO</span>
+              </button>
+            ))}
+            <p><Info size={16} /> El motor propio de LucIAna llega con 2 modos: cover y canta con tu voz</p>
           </div>}
         </div>
         <label className="field-label top-gap">Nombre de la canción <InfoTip title="Nombre de la canción">Este nombre es obligatorio y se usará al generar la canción.</InfoTip></label>
