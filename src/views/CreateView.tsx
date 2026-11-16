@@ -3965,27 +3965,11 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                   {m.label}
                 </button>
               ))}
-              <div className="text-[11px] uppercase tracking-wider text-white/50 px-4 pt-3 pb-1">Mureka</div>
-              {[
-                { value: 'mureka-9.5', label: 'Mureka V9.5 (Recomendado)' },
-                { value: 'auto', label: 'Mureka Auto' },
-                { value: 'mureka-9', label: 'Mureka V9' },
-              ].map((m) => (
-                <button
-                  key={m.value}
-                  type="button"
-                  onClick={() => {
-                    setModel(m.value as any);
-                    setIsModelMenuOpen(false);
-                  }}
-                  className={cn(
-                    "w-full text-left px-4 py-2.5 text-sm hover:bg-white/5 transition-colors",
-                    model === (m.value as any) ? "text-emerald-300" : "text-slate-200"
-                  )}
-                >
-                  {m.label}
-                </button>
-              ))}
+              <div className="text-[11px] uppercase tracking-wider text-white/50 px-4 pt-3 pb-1">LucIAna</div>
+              <div className="px-4 py-2.5 text-sm text-slate-400 flex items-center justify-between gap-3">
+                <span>LucIAna V1 · Cover y canta con tu voz</span>
+                <span className="text-[10px] font-extrabold tracking-wider text-slate-900 bg-amber-300 rounded-full px-2 py-0.5">PRONTO</span>
+              </div>
             </div>
           )}
         </div>
