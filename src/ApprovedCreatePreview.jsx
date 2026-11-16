@@ -2885,10 +2885,79 @@ function CloneNeedsRecharge({ onClose, variant = 'overlay' }) {
   );
 }
 
+// Aviso de "Mi voz (LucIAna V1)": se explica en palabras simples antes de activarlo.
+function LucianaV1Info({ onCancel, onAccept }) {
+  return (
+    <div className="wizard-overlay" role="dialog" aria-modal="true" aria-label="Qué es Mi voz LucIAna V1">
+      <div className="persona-modal" style={{ maxWidth: 560, width: '100%' }}>
+        <div className="persona-modal-header">
+          <div>
+            <small>MI VOZ · LUCIANA V1</small>
+            <h2>Una canción nueva con tu voz</h2>
+          </div>
+          <button type="button" className="wizard-close" aria-label="Cerrar" onClick={onCancel}>
+            <X size={22} />
+          </button>
+        </div>
+        <div className="persona-modal-body" style={{ maxHeight: '62vh', overflowY: 'auto' }}>
+          <p style={{ margin: '0 0 14px', lineHeight: 1.6 }}>
+            <strong>Tú subes o grabas un audio con tu voz</strong> (puede durar hasta 4:45).
+            Nosotros hacemos una <strong>canción nueva</strong> y la canta una voz que
+            <strong> suena como la tuya</strong>.
+          </p>
+          <p style={{ margin: '0 0 16px', lineHeight: 1.6, color: '#94a3b8' }}>
+            No es un cover: <strong>no</strong> rehacemos tu canción ni copiamos la de otro artista.
+          </p>
+
+          <div style={{ margin: '0 0 14px', padding: '12px 14px', borderRadius: 12, background: 'rgba(34,211,238,.08)', border: '1px solid rgba(34,211,238,.25)' }}>
+            <strong style={{ display: 'block', marginBottom: 6 }}>Úsalo cuando…</strong>
+            <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+              <li>Tienes la letra (o una idea) y quieres <strong>oír cómo suena con tu voz</strong>.</li>
+              <li>Quieres una canción <strong>nueva</strong> con tu timbre, sin pasar por el Clonador.</li>
+              <li>Le quieres regalar a alguien una canción cantada por ti.</li>
+            </ul>
+          </div>
+
+          <div style={{ margin: '0 0 16px', padding: '12px 14px', borderRadius: 12, background: 'rgba(239,68,68,.08)', border: '1px solid rgba(239,68,68,.28)' }}>
+            <strong style={{ display: 'block', marginBottom: 6 }}>No lo uses para…</strong>
+            <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+              <li>Imitar la voz de un cantante famoso (no está permitido).</li>
+              <li>Rehacer una canción que ya existe (este motor no hace eso).</li>
+            </ul>
+          </div>
+
+          <p style={{ margin: '0 0 20px', lineHeight: 1.55, color: '#94a3b8', fontSize: 13 }}>
+            Tu audio se usa como <strong>muestra de tu voz</strong> en cada canción; no se guarda una voz fija.
+            Cada canción con este motor cuesta <strong>10 créditos</strong>.
+          </p>
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button
+              type="button"
+              onClick={onCancel}
+              style={{ flex: 1, padding: '14px 18px', borderRadius: 14, cursor: 'pointer', fontWeight: 800, fontSize: 14, color: '#e2e8f0', background: 'rgba(255,255,255,.06)', border: '1px solid rgba(255,255,255,.18)' }}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={onAccept}
+              style={{ flex: 1.4, padding: '14px 18px', borderRadius: 14, border: 'none', cursor: 'pointer', fontWeight: 900, fontSize: 14, color: '#0b1020', background: 'linear-gradient(135deg,#a855f7,#22d3ee)' }}
+            >
+              Entendido, usar mi voz
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StartStep({ data, setData, setToast, handlers }) {
   const [clonePickerOpen, setClonePickerOpen] = useState(false);
   // Aviso para cuentas que nunca han hecho una recarga: clonar voz lo requiere.
   const [cloneGateOpen, setCloneGateOpen] = useState(false);
+  const [lucianaInfoOpen, setLucianaInfoOpen] = useState(false);
   const [personasLoading, setPersonasLoading] = useState(false);
   const [personasError, setPersonasError] = useState('');
   const [personas, setPersonas] = useState([]);
@@ -3606,6 +3675,15 @@ function StartStep({ data, setData, setToast, handlers }) {
           </a>
         ))}
       </div>
+      {lucianaInfoOpen && (
+        <LucianaV1Info
+          onCancel={() => setLucianaInfoOpen(false)}
+          onAccept={() => {
+            setLucianaInfoOpen(false);
+            setData({ ...data, model: "LucIAna V1", voice: "standard" });
+          }}
+        />
+      )}
       <div className="start-grid">
         <div className="decision-group">
           <div className="decision-heading"><span>1</span><div><h2>¿Qué voz quieres usar?</h2><p>Podrás cambiar esta elección antes de generar.</p></div></div>
@@ -3621,7 +3699,7 @@ function StartStep({ data, setData, setToast, handlers }) {
             <InfoTip title="Clonación de Voz">Compatible con todos los modelos. Elige una voz que ya hayas clonado antes.</InfoTip>
             <span className="radio" />
           </button>
-          <button className={data.model === "LucIAna V1" ? "decision-card selected" : "decision-card"} onClick={() => setData({ ...data, model: "LucIAna V1", voice: "standard" })}>
+          <button className={data.model === "LucIAna V1" ? "decision-card selected" : "decision-card"} onClick={() => setLucianaInfoOpen(true)}>
             <span className="choice-icon"><MagicWand size={28} /></span>
             <span><strong>Mi voz (LucIAna V1)</strong><small>Canción nueva cantada con tu voz clonada · no cover</small></span>
             <InfoTip title="LucIAna V1">Usa el audio que subes como muestra de tu voz. No se clona ni se guarda: se usa en cada canción.</InfoTip>
