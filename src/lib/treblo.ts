@@ -45,21 +45,38 @@ export function limiteSegundos(modelo?: string): number {
   return modelo === "V2" ? 95 : LIMITE_SEGUNDOS_V3;
 }
 
+// Un mismo API vive en dos dominios. Vercel recibe el desafío de Cloudflare en uno
+// de ellos, así que se reintenta en el otro antes de rendirse.
+const HOSTS = Array.from(new Set([BASE, "https://api.treblo.com"]));
+
 async function llamar(ruta: string, init: RequestInit = {}, ms = 30000): Promise<any> {
   const key = trebloApiKey();
   if (!key) throw new Error("Falta TREBLO_API_KEY");
-  const r = await fetch(`${BASE}${ruta}`, {
-    ...init,
-    headers: {
-      authorization: `Bearer ${key}`,
-      accept: "application/json",
-      "accept-language": "es-MX,es;q=0.9,en;q=0.8",
-      "user-agent": UA,
-      ...(init.headers || {}),
-    },
-    signal: AbortSignal.timeout(ms),
-  });
-  const txt = await r.text();
+  let ultimo: any = null;
+  for (const host of HOSTS) {
+    const r = await fetch(`${host}${ruta}`, {
+      ...init,
+      headers: {
+        authorization: `Bearer ${key}`,
+        accept: "application/json",
+        "accept-language": "es-MX,es;q=0.9,en;q=0.8",
+        "user-agent": UA,
+        ...(init.headers || {}),
+      },
+      signal: AbortSignal.timeout(ms),
+    });
+    const txt = await r.text();
+    const esHtml = /^\s*<(?:!doctype|html)/i.test(txt);
+    if (esHtml || r.status === 403) {
+      ultimo = { host, status: r.status, html: txt.slice(0, 120) };
+      continue;
+    }
+    return await procesarRespuesta(r, txt, init);
+  }
+  throw new Error("El proveedor bloqueó la petición (Cloudflare). Revisa el acceso del servidor.");
+}
+
+async function procesarRespuesta(r: Response, txt: string, init: RequestInit): Promise<any> {
   let json: any = null;
   try {
     json = txt ? JSON.parse(txt) : null;
