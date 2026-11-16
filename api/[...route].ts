@@ -1,5 +1,5 @@
 import { isVoiceAvailable, inspectVoiceReadiness, requireVoiceReady, voiceRecordError } from "../src/lib/voiceAvailability.js";
-import { trebloListo, subirAudio, crearCancionConVoz, estadoTarea, descargarPista } from "../src/lib/treblo.js";
+import { trebloListo, subirAudio, crearCancionConVoz, estadoTarea, descargarPista, saldo as trebloSaldo } from "../src/lib/treblo.js";
 import { authorizeAudioCleanup, cleanupTemporaryAudio } from "../src/lib/temporaryAudioCleanup.js";
 
 const CREDIT_COSTS = {
@@ -427,6 +427,20 @@ async function v1BajarAudio(db: any, audioUrl: string, audioPath: string): Promi
   return null;
 }
 
+async function lucianaV1Balance(req: any, res: any) {
+  const esperada = process.env.LUCIANA_FORM_TOKEN || "luciana-form-2026";
+  let dada = "";
+  try { dada = new URL(req.url, "http://x").searchParams.get("key") || ""; } catch {}
+  if (dada !== esperada) return v1Responder(res, 401, { error: "unauthorized" });
+  if (!trebloListo()) return v1Responder(res, 503, { error: "El motor LucIAna V1 está apagado." });
+  const creditos = await trebloSaldo();
+  return v1Responder(res, 200, {
+    ok: creditos !== null,
+    creditos,
+    canciones_disponibles: creditos === null ? null : Math.floor(creditos / 100),
+  });
+}
+
 async function lucianaV1Create(req: any, res: any) {
   if (!trebloListo()) return v1Responder(res, 503, { error: "El motor LucIAna V1 todavía no está disponible." });
   if ((req.method || "").toUpperCase() !== "POST") return v1Responder(res, 405, { error: "Método no permitido" });
@@ -444,6 +458,16 @@ async function lucianaV1Create(req: any, res: any) {
 
   const bytes = await v1BajarAudio(auth.db, audioUrl, audioPath);
   if (!bytes || bytes.length < 20 * 1024) return v1Responder(res, 400, { error: "No pude leer el audio. Vuelve a subirlo." });
+
+  // Si al motor no le alcanza para una canción, mejor no cobrar.
+  const saldoMotor = await trebloSaldo();
+  if (saldoMotor !== null && saldoMotor < 100) {
+    return v1Responder(res, 503, {
+      error: "El motor LucIAna V1 está sin saldo en este momento. Avisa al administrador.",
+      code: "MOTOR_SIN_SALDO",
+      motor_creditos: saldoMotor,
+    });
+  }
 
   let consumido = false;
   try {
@@ -30607,6 +30631,7 @@ export default async function handler(req: any, res: any) {
     if (head === "ai") return aiHandler(req, res);
     if (head === "luciana-bot") return lucianaBotHandler(req, res);
     if (head === "luciana" && next === "voice-flow") return lucianaVoiceHandler(req, res);
+    if (head === "luciana" && next === "v1-balance") return lucianaV1Balance(req, res);
     if (head === "luciana" && next === "v1-create") return lucianaV1Create(req, res);
     if (head === "luciana" && next === "v1-status") return lucianaV1Status(req, res);
     if (head === "affiliates") return affiliatesHandler(req, res);
