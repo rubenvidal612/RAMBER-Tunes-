@@ -24,6 +24,8 @@ export type TrebloTask = {
 };
 
 const BASE = process.env.TREBLO_BASE_URL || "https://api.sonauto.ai";
+const UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36";
 const LIMITE_SEGUNDOS_V3 = 4 * 60 + 45;
 
 export function trebloEnabled(): boolean {
@@ -48,7 +50,13 @@ async function llamar(ruta: string, init: RequestInit = {}, ms = 30000): Promise
   if (!key) throw new Error("Falta TREBLO_API_KEY");
   const r = await fetch(`${BASE}${ruta}`, {
     ...init,
-    headers: { authorization: `Bearer ${key}`, ...(init.headers || {}) },
+    headers: {
+      authorization: `Bearer ${key}`,
+      accept: "application/json",
+      "accept-language": "es-MX,es;q=0.9,en;q=0.8",
+      "user-agent": UA,
+      ...(init.headers || {}),
+    },
     signal: AbortSignal.timeout(ms),
   });
   const txt = await r.text();
