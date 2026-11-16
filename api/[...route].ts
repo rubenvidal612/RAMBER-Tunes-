@@ -544,6 +544,26 @@ async function lucianaV1Status(req: any, res: any) {
     }
     await auth.db.from("suno_tasks").update({ extra: { ...extra, status: "success", guardado: guardados } })
       .eq("task_id", taskId).eq("user_id", auth.user.id);
+
+    // Si no se pudo archivar NADA, el cliente no debe pagar: se devuelve una sola vez.
+    if (guardados.length === 0) {
+      const r2 = await auth.db.from("suno_tasks")
+        .update({ consumed: false })
+        .eq("task_id", taskId).eq("user_id", auth.user.id).eq("consumed", true)
+        .select("task_id");
+      const devuelto = Array.isArray((r2 as any)?.data) && (r2 as any).data.length > 0;
+      if (devuelto) await adjustUserCredits(auth.db, auth.user.id, LUCIANA_V1_COST);
+      await auth.db.from("suno_tasks").update({
+        extra: { ...extra, status: "error_archivo", guardado: [], errores: erroresArchivo.slice(0, 5), reembolsado: devuelto },
+      }).eq("task_id", taskId).eq("user_id", auth.user.id);
+      return v1Responder(res, 200, {
+        ok: false,
+        status: "failure",
+        refunded: devuelto,
+        error: "La canción se generó pero no pude guardarla. " + (devuelto ? "Te devolvimos los créditos." : "Escríbenos por favor."),
+      });
+    }
+
     let quiereDebug = false;
     try { quiereDebug = new URL(req.url, "http://x").searchParams.get("debug") === "1"; } catch {}
     return v1Responder(res, 200, {

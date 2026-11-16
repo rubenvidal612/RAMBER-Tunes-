@@ -1585,6 +1585,10 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   };
 
   const getProviderBadge = (s: SongItem): { label: string; cls: string } => {
+    // Motor propio: se distingue por model_version, no por provider.
+    if (String((s as any).modelVersion || '').toLowerCase() === 'luciana_v1') {
+      return { label: 'LucIAna V1', cls: 'bg-fuchsia-500/15 text-fuchsia-200 border border-fuchsia-500/30 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide' };
+    }
     const p = String(s.provider || '').toLowerCase();
     const implicitSuno = !s.provider && (Boolean(s.sunoTaskId) || Boolean(s.sunoModel));
     const m = s.modelVersion || s.sunoModel || '';
