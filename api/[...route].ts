@@ -516,18 +516,25 @@ async function lucianaV1Status(req: any, res: any) {
         const base = titulo.replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, "-").slice(0, 60) || "cancion";
         const key = "imports/" + auth.user.id + "/" + Date.now() + "_" + base + (i ? "_" + (i + 1) : "") + ".mp3";
         const url = await uploadToR2(key, buf, "audio/mpeg");
-        const ins = await auth.db.from("library_items").insert({
+        const filaBase: any = {
           user_id: auth.user.id,
           type: "song",
           title: i ? titulo + " (" + (i + 1) + ")" : titulo,
           lyrics: estado.lyrics || extra?.lyrics || "",
           audio_url: url,
           is_cover: false,
-          provider: "treblo",
           model_version: "luciana_v1",
           suno_task_id: "treblo:" + taskId,
           suno_audio_id: "treblo-" + taskId + "-" + i,
-        }).select("*").single();
+        };
+        let ins: any = await auth.db.from("library_items")
+          .insert({ ...filaBase, provider: "treblo" }).select("*").single();
+        // La tabla restringe provider a una lista cerrada; si 'treblo' aún no está
+        // permitido, se guarda igual (el motor se distingue por model_version).
+        if (ins?.error && /provider_check/i.test(String(ins.error.message || ""))) {
+          ins = await auth.db.from("library_items")
+            .insert({ ...filaBase, provider: "suno" }).select("*").single();
+        }
         if ((ins as any)?.error) throw (ins as any).error;
         guardados.push({ title: (ins as any)?.data?.title || titulo, audio_url: url, id: (ins as any)?.data?.id || null });
       } catch (e: any) {
