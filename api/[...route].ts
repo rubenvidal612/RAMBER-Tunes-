@@ -507,6 +507,7 @@ async function lucianaV1Status(req: any, res: any) {
 
     const titulo = String(extra?.title || "Canción");
     const guardados: any[] = [];
+    const erroresArchivo: string[] = [];
     for (let i = 0; i < estado.songPaths.length; i++) {
       const origen = estado.songPaths[i];
       if (!origen) continue;
@@ -530,12 +531,20 @@ async function lucianaV1Status(req: any, res: any) {
         if ((ins as any)?.error) throw (ins as any).error;
         guardados.push({ title: (ins as any)?.data?.title || titulo, audio_url: url, id: (ins as any)?.data?.id || null });
       } catch (e: any) {
+        erroresArchivo.push(String((e as any)?.message || e).slice(0, 400));
         console.error("[luciana-v1] no pude archivar la pista", i, e?.message || e);
       }
     }
     await auth.db.from("suno_tasks").update({ extra: { ...extra, status: "success", guardado: guardados } })
       .eq("task_id", taskId).eq("user_id", auth.user.id);
-    return v1Responder(res, 200, { ok: true, status: "success", songs: guardados });
+    let quiereDebug = false;
+    try { quiereDebug = new URL(req.url, "http://x").searchParams.get("debug") === "1"; } catch {}
+    return v1Responder(res, 200, {
+      ok: true,
+      status: "success",
+      songs: guardados,
+      ...(quiereDebug ? { debug: { pistas: estado.songPaths, errores: erroresArchivo } } : {}),
+    });
   }
 
   if (estado.status === "failure") {
