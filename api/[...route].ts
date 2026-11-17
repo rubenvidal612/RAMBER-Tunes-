@@ -441,6 +441,113 @@ async function lucianaV1Balance(req: any, res: any) {
   });
 }
 
+async function lucianaV1FinishCron(req: any, res: any) {
+  const esperada = process.env.LUCIANA_FORM_TOKEN || "luciana-form-2026";
+  let dada = "";
+  try { dada = new URL(req.url, "http://x").searchParams.get("key") || ""; } catch {}
+  if (dada !== esperada) return v1Responder(res, 401, { error: "unauthorized" });
+  if (!trebloListo()) return v1Responder(res, 200, { ok: true, apagado: true });
+
+  const db = await v1Cliente();
+  if (!db) return v1Responder(res, 500, { error: "db_unavailable" });
+
+  const { data: filas } = await db.from("suno_tasks").select("*")
+    .eq("kind", LUCIANA_V1_KIND).eq("consumed", true)
+    .order("created_at", { ascending: true }).limit(15);
+
+  const resultados: any[] = [];
+  for (const fila of Array.isArray(filas) ? filas : []) {
+    const extra: any = (() => {
+      try { return typeof (fila as any).extra === "string" ? JSON.parse((fila as any).extra) : ((fila as any).extra || {}); }
+      catch { return {}; }
+    })();
+    if (extra?.status === "success" || extra?.status === "error_archivo") continue;
+
+    let estado: any = null;
+    try { estado = await estadoTarea(String((fila as any).task_id)); } catch { estado = null; }
+    if (!estado) { resultados.push({ task: (fila as any).task_id, resultado: "sin_respuesta" }); continue; }
+
+    const uid = String((fila as any).user_id);
+    const taskId = String((fila as any).task_id);
+
+    if (estado.status === "failure") {
+      const upd: any = await db.from("suno_tasks").update({ consumed: false })
+        .eq("task_id", taskId).eq("user_id", uid).eq("consumed", true).select("task_id");
+      const devuelto = Array.isArray(upd?.data) && upd.data.length > 0;
+      if (devuelto) await adjustUserCredits(db, uid, LUCIANA_V1_COST);
+      await db.from("suno_tasks").update({ extra: { ...extra, status: "failure", error: estado.error || "El proveedor falló" } })
+        .eq("task_id", taskId).eq("user_id", uid);
+      resultados.push({ task: taskId, resultado: "fallo", reembolsado: devuelto });
+      continue;
+    }
+
+    if (estado.status !== "success") { resultados.push({ task: taskId, resultado: estado.status }); continue; }
+
+    const titulo = String(extra?.title || "Canción");
+    const guardados: any[] = [];
+    for (let i = 0; i < estado.songPaths.length; i++) {
+      const origen = estado.songPaths[i];
+      if (!origen) continue;
+      try {
+        const buf = await descargarPista(origen);
+        const base = titulo.replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, "-").slice(0, 60) || "cancion";
+        const key = "imports/" + uid + "/" + Date.now() + "_" + base + (i ? "_" + (i + 1) : "") + ".mp3";
+        const url = await uploadToR2(key, buf, "audio/mpeg");
+        const ins: any = await db.from("library_items").insert({
+          user_id: uid,
+          type: "song",
+          title: i ? titulo + " (" + (i + 1) + ")" : titulo,
+          lyrics: estado.lyrics || extra?.lyrics || "",
+          audio_url: url,
+          is_cover: false,
+          provider: "treblo",
+          model_version: "luciana_v1",
+          suno_task_id: "treblo:" + taskId,
+          suno_audio_id: "treblo-" + taskId + "-" + i,
+        }).select("*").single();
+        if (ins?.error && /provider_check/i.test(String(ins.error.message || ""))) {
+          const alt: any = await db.from("library_items").insert({
+            user_id: uid,
+            type: "song",
+            title: i ? titulo + " (" + (i + 1) + ")" : titulo,
+            lyrics: estado.lyrics || extra?.lyrics || "",
+            audio_url: url,
+            is_cover: false,
+            provider: "suno",
+            model_version: "luciana_v1",
+            suno_task_id: "treblo:" + taskId,
+            suno_audio_id: "treblo-" + taskId + "-" + i,
+          }).select("*").single();
+          if (alt?.error) throw alt.error;
+          guardados.push({ title: alt?.data?.title || titulo, audio_url: url, id: alt?.data?.id || null });
+          continue;
+        }
+        if (ins?.error) throw ins.error;
+        guardados.push({ title: ins?.data?.title || titulo, audio_url: url, id: ins?.data?.id || null });
+      } catch (e: any) {
+        console.error("[luciana-v1 cron] no pude archivar", i, e?.message || e);
+      }
+    }
+
+    if (guardados.length === 0) {
+      const upd: any = await db.from("suno_tasks").update({ consumed: false })
+        .eq("task_id", taskId).eq("user_id", uid).eq("consumed", true).select("task_id");
+      const devuelto = Array.isArray(upd?.data) && upd.data.length > 0;
+      if (devuelto) await adjustUserCredits(db, uid, LUCIANA_V1_COST);
+      await db.from("suno_tasks").update({ extra: { ...extra, status: "error_archivo", guardado: [], reembolsado: devuelto } })
+        .eq("task_id", taskId).eq("user_id", uid);
+      resultados.push({ task: taskId, resultado: "no_archivado", reembolsado: devuelto });
+      continue;
+    }
+
+    await db.from("suno_tasks").update({ extra: { ...extra, status: "success", guardado: guardados } })
+      .eq("task_id", taskId).eq("user_id", uid);
+    resultados.push({ task: taskId, resultado: "guardado", canciones: guardados.length });
+  }
+
+  return v1Responder(res, 200, { ok: true, revisadas: (filas || []).length, resultados });
+}
+
 async function lucianaV1Create(req: any, res: any) {
   if (!trebloListo()) return v1Responder(res, 503, { error: "El motor LucIAna V1 todavía no está disponible." });
   if ((req.method || "").toUpperCase() !== "POST") return v1Responder(res, 405, { error: "Método no permitido" });
@@ -30650,6 +30757,7 @@ export default async function handler(req: any, res: any) {
     if (head === "luciana-bot") return lucianaBotHandler(req, res);
     if (head === "luciana" && next === "voice-flow") return lucianaVoiceHandler(req, res);
     if (head === "luciana" && next === "v1-balance") return lucianaV1Balance(req, res);
+    if (head === "cron" && next === "finish-luciana-v1") return lucianaV1FinishCron(req, res);
     if (head === "luciana" && next === "v1-create") return lucianaV1Create(req, res);
     if (head === "luciana" && next === "v1-status") return lucianaV1Status(req, res);
     if (head === "affiliates") return affiliatesHandler(req, res);
