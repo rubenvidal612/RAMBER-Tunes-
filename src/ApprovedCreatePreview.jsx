@@ -6703,7 +6703,9 @@ function ApprovedCreateContent(props) {
           });
           const cj = await creado.json().catch(() => ({}));
           if (!creado.ok || !cj?.taskId) {
-            setToast(cj?.error || 'No se pudo generar con LucIAna V1.');
+            const causa = String(cj?.detail || cj?.error || ('HTTP ' + creado.status)).slice(0, 180);
+            console.error('[luciana-v1] crear falló', creado.status, causa);
+            setToast('LucIAna V1: ' + causa);
             return false;
           }
           setToast('LucIAna V1 está cantando con tu voz. Te llevo a tu biblioteca: aparecerá en 1 a 3 minutos.');
@@ -6731,7 +6733,9 @@ function ApprovedCreateContent(props) {
           })();
           return true;
         } catch (e) {
-          setToast('No se pudo generar con LucIAna V1. No se cobraron créditos.');
+          const causa = e instanceof Error ? e.message : String(e);
+          console.error('[luciana-v1] excepción', causa);
+          setToast('LucIAna V1: ' + String(causa).slice(0, 180));
           return false;
         }
       }
