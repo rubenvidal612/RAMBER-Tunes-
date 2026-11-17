@@ -2720,6 +2720,18 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
             </div>
           )}
           {wizardStep === 3 && <div className="wizard-section"><h3>Verificación</h3><p>Estamos verificando tu voz con la grabación de la frase.</p>{!verificationReady ? <div className="wizard-info"><Info size={19}/><span>No encontré una grabación. Regresa al paso anterior y graba la frase.</span></div> : <div className="profile-preview"><span>Grabación</span><strong>{profile.verifyAudio?.name || "Grabación lista"}</strong><small>{(profile.verifyAudio?.type || "").toString()}</small>{phraseRecording.url ? <audio controls src={phraseRecording.url} style={{ width: "100%", marginTop: 10 }} /> : null}</div>}{(verifyUpload.loading || voiceGen.loading) ? <div className="wizard-info" style={{ marginTop: 12 }}><Loader2 size={18} className="animate-spin" /><span>{verifyUpload.loading ? "Subiendo la grabación…" : voiceGen.status === "preparing_validation" ? "Preparando la verificación…" : "Verificando tu voz…"}</span></div> : null}{verifyUpload.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{verifyUpload.error}</span></div> : null}{voiceGen.error ? <div className="wizard-info" style={{ marginTop: 12 }}><Info size={19}/><span>{voiceGen.error}</span></div> : null}{(verifyUpload.error || (voiceGen.error && !wantsNewPhrase(voiceGen.error))) && voiceGen.status !== "needs_new_phrase" ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" disabled={verifyUpload.loading || voiceGen.loading} onClick={() => { verifyAutoRef.current.attempt += 1; startVerificationFlow({ force: true }).catch(() => {}); }}>Intentar nuevamente</button></div> : null}{(voiceGen.error && wantsNewPhrase(voiceGen.error)) ? <div className="sample-actions" style={{ marginTop: 12 }}><button type="button" disabled={!validation.taskId || validation.loading || regenPhraseBusy} onClick={() => handleRegeneratePhrase().catch(() => {})}>Regenerar frase</button></div> : null}</div>}
+          {wizardStep === 3 && (verifyUpload.loading || voiceGen.loading) ? (
+            <div style={{ position: 'fixed', inset: 0, zIndex: 400, display: 'grid', placeItems: 'center', background: 'rgba(4,7,17,.72)' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '28px 34px', borderRadius: 22, background: 'linear-gradient(160deg, rgba(168,85,247,.20), rgba(34,211,238,.12))', border: '1px solid rgba(168,85,247,.45)', boxShadow: '0 24px 80px rgba(0,0,0,.55)', animation: 'lucianaPulse 1.6s ease-in-out infinite' }}>
+                <div style={{ width: 52, height: 52, borderRadius: '50%', border: '3px solid rgba(255,255,255,.18)', borderTopColor: '#22d3ee', animation: 'lucianaSpin 1s linear infinite' }} />
+                <strong style={{ fontSize: 16, color: '#e2e8f0' }}>Verificando tu voz…</strong>
+                <span style={{ fontSize: 13, color: '#9da7b6', textAlign: 'center', maxWidth: 300, lineHeight: 1.5 }}>
+                  Estamos confirmando con Suno que tu voz quedó bien registrada. Tarda unos segundos.
+                </span>
+              </div>
+              <style>{'@keyframes lucianaSpin{to{transform:rotate(360deg)}}@keyframes lucianaPulse{0%,100%{transform:scale(1)}50%{transform:scale(1.03)}}'}</style>
+            </div>
+          ) : null}
           {wizardStep === 4 && <div className="wizard-section ready-section">
             <div className="ready-icon">{voiceGen.loading ? <Loader2 size={28} className="animate-spin" /> : isVoiceAvailable(voiceGen.isAvailable) ? <Check size={34} weight="bold"/> : <Info size={34}/>}</div>
             <h3>{voiceGen.loading ? "Comprobando tu personaje…" : isVoiceAvailable(voiceGen.isAvailable) ? "Personaje confirmado por Suno" : "Voz sin confirmar"}</h3>
@@ -4668,8 +4680,7 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
         </div>
         <textarea value={data.style} onChange={(e) => updateStyle(e.target.value)} placeholder="Ejemplo: Balada pop romántica, piano suave, voz emotiva..." />
         {data.styleTranslated && <div className="translation-note"><Check size={17} weight="bold" /> Instrucción traducida. Puedes editarla antes de continuar.</div>}
-        <label className="field-label top-gap">Evitar estilos o elementos</label>
-        <textarea className="short-area" value={data.negative} onChange={(e) => setData({ ...data, negative: e.target.value })} placeholder="Ejemplo: Sin batería fuerte, sin voz robótica..." />
+
         <div className="gender-section"><div className="gender-heading"><div><strong>Tipo de voz</strong><p>Elige qué voz interpretará la canción.</p></div><InfoTip title="Tipo de voz">Esta opción indica a Suno si deseas una voz masculina o femenina.</InfoTip></div><div className="gender-buttons"><button className={data.vocalGender === "m" ? "selected" : ""} onClick={()=>setData({...data,vocalGender:"m"})}><User size={24}/><span><strong>Voz de hombre</strong><small>Voz masculina</small></span><span className="radio"/></button><button className={data.vocalGender === "f" ? "selected" : ""} onClick={()=>setData({...data,vocalGender:"f"})}><User size={24}/><span><strong>Voz de mujer</strong><small>Voz femenina</small></span><span className="radio"/></button></div></div>
       </div>
       <div className={isMobileLayout ? "settings-panel precision-collapsible" : "settings-panel"}>
@@ -5667,7 +5678,7 @@ function ApprovedCreateContent(props) {
 
   const applyDraftPayload = (parsed) => {
     if (!parsed || typeof parsed !== 'object') return;
-    if (typeof parsed.step === 'number' && parsed.step >= 0 && parsed.step <= 3) setStep(parsed.step);
+    // Siempre se empieza en el paso 1 (Inicio), aunque el borrador guardara otro paso.
     if (typeof parsed.creativity === 'number') setCreativity(Math.max(0, Math.min(100, parsed.creativity)));
     if (typeof parsed.instruction === 'number') setInstruction(Math.max(0, Math.min(100, parsed.instruction)));
     if (typeof parsed.audioWeight === 'number') setAudioWeight(Math.max(0, Math.min(100, parsed.audioWeight)));
@@ -6691,7 +6702,7 @@ function ApprovedCreateContent(props) {
             baseTaskId: baseSongIds.taskId || undefined,
             baseAudioId: baseSongIds.audioId || undefined,
             instrumental: false,
-            prompt,
+            prompt: (prompt || data.style || normalizedSongTitle || 'canción').toString().trim(),
             style: payload.style || data.style.toString().trim() || 'General',
             title: normalizedSongTitle,
             model: modelCode,
