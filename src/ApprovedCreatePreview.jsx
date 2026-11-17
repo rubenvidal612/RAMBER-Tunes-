@@ -2970,6 +2970,15 @@ function StartStep({ data, setData, setToast, handlers }) {
   // Aviso para cuentas que nunca han hecho una recarga: clonar voz lo requiere.
   const [cloneGateOpen, setCloneGateOpen] = useState(false);
   const [lucianaInfoOpen, setLucianaInfoOpen] = useState(false);
+  const [lucianaDisponible, setLucianaDisponible] = useState(true);
+  useEffect(() => {
+    let vivo = true;
+    fetch('/api/luciana/v1-availability')
+      .then((r) => r.json())
+      .then((j) => { if (vivo && j && typeof j.disponible === 'boolean') setLucianaDisponible(j.disponible); })
+      .catch(() => {});
+    return () => { vivo = false; };
+  }, []);
   const [personasLoading, setPersonasLoading] = useState(false);
   const [personasError, setPersonasError] = useState('');
   const [personas, setPersonas] = useState([]);
@@ -3711,9 +3720,9 @@ function StartStep({ data, setData, setToast, handlers }) {
             <InfoTip title="Clonación de Voz">Compatible con todos los modelos. Elige una voz que ya hayas clonado antes.</InfoTip>
             <span className="radio" />
           </button>
-          <button className={data.model === "LucIAna V1" ? "decision-card selected" : "decision-card"} onClick={() => setLucianaInfoOpen(true)}>
+          <button className={data.model === "LucIAna V1" ? "decision-card selected" : "decision-card"} style={lucianaDisponible ? undefined : { opacity: 0.55 }} onClick={() => { if (!lucianaDisponible) { setToast('LucIAna V1 no está disponible por ahora. Usa Voz estándar o Clonar voz.'); return; } setLucianaInfoOpen(true); }}>
             <span className="choice-icon"><MagicWand size={28} /></span>
-            <span><strong>Mi voz (LucIAna V1)</strong><small>Canta con tu voz y respeta tu fraseo</small></span>
+            <span><strong>Mi voz (LucIAna V1)</strong><small>{lucianaDisponible ? "Canta con tu voz y respeta tu fraseo" : "No disponible por ahora"}</small></span>
             <InfoTip title="LucIAna V1">Usa el audio que subes como muestra de tu voz. No se clona ni se guarda: se usa en cada canción.</InfoTip>
             <span className="radio" />
           </button>

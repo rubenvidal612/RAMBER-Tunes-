@@ -427,6 +427,13 @@ async function v1BajarAudio(db: any, audioUrl: string, audioPath: string): Promi
   return null;
 }
 
+async function lucianaV1Availability(req: any, res: any) {
+  if (!trebloListo()) return v1Responder(res, 200, { disponible: false, motivo: "apagado" });
+  const creditos = await trebloSaldo();
+  const disponible = creditos === null ? true : creditos >= 100;
+  return v1Responder(res, 200, { disponible, motivo: disponible ? "" : "sin_saldo" });
+}
+
 async function lucianaV1Balance(req: any, res: any) {
   const esperada = process.env.LUCIANA_FORM_TOKEN || "luciana-form-2026";
   let dada = "";
@@ -30786,6 +30793,7 @@ export default async function handler(req: any, res: any) {
     if (head === "ai") return aiHandler(req, res);
     if (head === "luciana-bot") return lucianaBotHandler(req, res);
     if (head === "luciana" && next === "voice-flow") return lucianaVoiceHandler(req, res);
+    if (head === "luciana" && next === "v1-availability") return lucianaV1Availability(req, res);
     if (head === "luciana" && next === "v1-balance") return lucianaV1Balance(req, res);
     if (head === "cron" && next === "finish-luciana-v1") return lucianaV1FinishCron(req, res);
     if (head === "luciana" && next === "v1-create") return lucianaV1Create(req, res);
