@@ -4644,6 +4644,28 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
                 Cambiar a Suno
               </button>
             </p>
+            <div style={{ marginTop: 16, padding: '14px 16px', borderRadius: 14, background: 'rgba(168,85,247,.08)', border: '1px solid rgba(168,85,247,.28)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <strong style={{ fontSize: 13 }}>Qué tanto manda el estilo que escribiste</strong>
+                <span style={{ fontSize: 13, fontWeight: 800, color: '#22d3ee' }}>{Number(data.engineStrength ?? 3).toFixed(1)} / 4.5</span>
+              </div>
+              <input
+                type="range"
+                min={1}
+                max={4.5}
+                step={0.5}
+                value={Number(data.engineStrength ?? 3)}
+                onChange={(e) => setData({ ...data, engineStrength: Number(e.target.value) })}
+                style={{ width: '100%', accentColor: '#22d3ee' }}
+              />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#8b95a6', marginTop: 4 }}>
+                <span>Más parecido a tu grabación</span>
+                <span>Más fiel al estilo escrito</span>
+              </div>
+              <p style={{ margin: '8px 0 0', fontSize: 11.5, color: '#8b95a6', lineHeight: 1.45 }}>
+                Si el género salió distinto al que pediste, súbelo. Si quieres que suene más a tu grabación original, bájalo.
+              </p>
+            </div>
           </div>
         ) : (
         <div className="select-wrap">
@@ -6656,6 +6678,7 @@ function ApprovedCreateContent(props) {
               lyrics: String(data.lyrics || ''),
               title: normalizedSongTitle,
               instrumental: false,
+              promptStrength: Number(data.engineStrength ?? 3),
             }),
           });
           const cj = await creado.json().catch(() => ({}));

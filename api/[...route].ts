@@ -582,8 +582,13 @@ async function lucianaV1Create(req: any, res: any) {
     if (!consumo?.ok) return v1Responder(res, 402, { error: consumo?.error || "Créditos insuficientes. Recarga para continuar." });
     consumido = true;
 
+    const fuerzaEstilo = (() => {
+      const n = Number(body?.promptStrength);
+      if (!Number.isFinite(n)) return 3;
+      return Math.max(1, Math.min(4.5, n));
+    })();
     const uploadId = await subirAudio(bytes, "voz.mp3", "audio/mpeg");
-    const taskId = await crearCancionConVoz({ audioUploadId: uploadId, prompt, lyrics, instrumental });
+    const taskId = await crearCancionConVoz({ audioUploadId: uploadId, prompt, lyrics, instrumental, promptStrength: fuerzaEstilo });
     if (!taskId) throw new Error("El proveedor no devolvió tarea");
 
     await auth.db.from("suno_tasks").insert({
@@ -592,7 +597,7 @@ async function lucianaV1Create(req: any, res: any) {
       kind: LUCIANA_V1_KIND,
       cost: LUCIANA_V1_COST,
       consumed: true,
-      extra: { provider: "treblo", mode: "voice", title, prompt, style: prompt, lyrics, audio_ref: audioPath || audioUrl, status: "processing" },
+      extra: { provider: "treblo", mode: "voice", title, prompt, style: prompt, style_strength: fuerzaEstilo, lyrics, audio_ref: audioPath || audioUrl, status: "processing" },
     });
 
     return v1Responder(res, 200, { ok: true, taskId, provider: "treblo", credits: LUCIANA_V1_COST });
