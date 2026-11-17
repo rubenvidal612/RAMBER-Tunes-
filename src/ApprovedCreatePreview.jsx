@@ -3155,7 +3155,7 @@ function StartStep({ data, setData, setToast, handlers }) {
       return;
     }
     previousVoiceRef.current = { voice: data.voice, model: data.model, voiceProfile: data.voiceProfile };
-    setData((current) => ({ ...current, voice: 'clone', voiceProfile: null }));
+    setData((current) => ({ ...current, voice: 'clone', voiceProfile: null, model: current.model === 'LucIAna V1' ? 'Suno V6' : current.model }));
     setClonePickerOpen(true);
   };
 
@@ -3692,7 +3692,7 @@ function StartStep({ data, setData, setToast, handlers }) {
           onCancel={() => setLucianaInfoOpen(false)}
           onAccept={() => {
             setLucianaInfoOpen(false);
-            setData({ ...data, model: "LucIAna V1", voice: "standard" });
+            setData({ ...data, model: "LucIAna V1", voice: "", voiceProfile: null });
           }}
         />
       )}
@@ -4876,7 +4876,7 @@ function ReviewStep({ data, setData, creativity, instruction, audioWeight, setTo
         <div className="review-card"><span>Nombre de la canción</span><strong>{data.title || "Sin nombre todavía"}</strong><small>{data.title ? "Nombre listo para generar" : "Vuelve al paso 3 para escribirlo"}</small></div>
         <div className="review-card"><span>Letra · {usingAI ? "Modo IA" : "Modo manual"}</span><strong>{lyricsLabel}</strong><small>{lyricsSub}</small></div>
         <div className="review-card"><span>Motor</span><strong>{data.model === "LucIAna V1" ? "LucIAna V1" : data.voice === "clone" ? "Clonar voz" : normalizeModelName(data.model)}</strong><small>{data.model === "LucIAna V1" ? "Canta con tu voz · canción nueva" : data.voice === "clone" ? "Voz clonada" : "Modelo seleccionado"}</small></div>
-        <div className="review-card"><span>Voz y audio</span><strong>{data.voice === "clone" ? "Clonar voz" : data.voice === "upload" ? "Audio propio" : "Voz estándar"}</strong><small>{data.file?.name || handlers?.uploadedAudioName || (hasUploadedReferenceAudio ? "Audio cargado" : usingReferenceAudio ? "Falta subir el audio" : "No estás usando audio")}</small></div>
+        <div className="review-card"><span>Voz y audio</span><strong>{data.model === "LucIAna V1" ? "Tu voz (audio)" : data.voice === "clone" ? "Clonar voz" : data.voice === "upload" ? "Audio propio" : "Voz estándar"}</strong><small>{data.file?.name || handlers?.uploadedAudioName || (hasUploadedReferenceAudio ? "Audio cargado" : usingReferenceAudio ? "Falta subir el audio" : "No estás usando audio")}</small></div>
         <div className="review-card"><span>Tipo de voz</span><strong>{data.vocalGender === "m" ? "Voz de hombre" : data.vocalGender === "f" ? "Voz de mujer" : "Sin seleccionar"}</strong><small>{data.vocalGender ? "Selección guardada" : "Vuelve al paso 3 para elegirla"}</small></div>
         <div className="review-card"><span>Ajustes</span><strong>{creativity}% rareza</strong><small>{instruction}% estilo{data.audioSource === 'upload' && Boolean(handlers?.hasUploadedAudio) ? ` · ${audioWeight}% audio` : ''}</small></div>
         <div className="review-card review-card-wide"><span>Instrucción o estilo musical</span><strong>{data.style || "Todavía no escribiste una instrucción"}</strong><small>{data.negative ? `Evitar: ${data.negative}` : "Sin estilos o elementos excluidos"}</small></div>
