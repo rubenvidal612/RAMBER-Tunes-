@@ -23243,7 +23243,7 @@ document.getElementById('btnOk').addEventListener('click',async function(){
     if (!u) return sendJson(res, 401, { error: "unauthorized" });
     const me = String(u.email || "").trim().toLowerCase();
     if (!me) return sendJson(res, 400, { error: "no_email" });
-    const exp = Math.floor(Date.now() / 1000) + 60 * 60 * 12; // 12 horas
+    const exp = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 30; // 30 dias (los vendedores abren el link del panel desde WhatsApp)
     const f = await panelSign(me, exp);
     return sendJson(res, 200, { ok: true, me, exp, f });
   }
