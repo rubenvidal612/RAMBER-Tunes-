@@ -129,6 +129,10 @@ export async function crearCancionConVoz(params: {
     instrumental: Boolean(params.instrumental),
     prompt_strength: Number.isFinite(Number(params.promptStrength)) ? Number(params.promptStrength) : 3,
   };
+  // Regla del proveedor: solo una de las dos fuerzas puede pasar de 1.0.
+  // Si mandamos prompt_strength alto, style_scale tiene que ir en 1.0.
+  if (Number(body.prompt_strength) > 1) body.style_scale = 1;
+  else body.prompt_strength = 1;
   const letra = String(params.lyrics || "").trim();
   if (letra && !params.instrumental) body.lyrics = letra.slice(0, 6000);
   const j = await llamar("/v1/generations/v3/reference", {
