@@ -22276,6 +22276,24 @@ document.getElementById('send').addEventListener('click',async function(){
     const share = `https://lucianamusic.app/api/form/open?t=${encodeURIComponent(token)}`;
     const inner = `
 <h1>Canciones por hacer</h1>
+<div id="motorSaldo" class="small" style="margin:-4px 0 10px;color:#9ca3af">Motor LucIAna V1: consultando…</div>
+<script>
+(function(){
+  try{
+    fetch('/api/luciana/v1-balance?key=' + encodeURIComponent(${JSON.stringify(token)}))
+      .then(function(r){ return r.json(); })
+      .then(function(j){
+        var el = document.getElementById('motorSaldo');
+        if(!el) return;
+        if(!j || !j.ok || typeof j.creditos !== 'number'){ el.textContent = 'Motor LucIAna V1: sin datos'; return; }
+        el.innerHTML = 'Motor <b>LucIAna V1</b>: ' + j.creditos + ' créditos · ' + j.canciones_disponibles + ' canciones disponibles';
+        if(j.creditos < 200){ el.style.color = '#f59e0b'; }
+        if(j.creditos < 100){ el.style.color = '#ef4444'; el.innerHTML += ' — recarga el motor'; }
+      })
+      .catch(function(){});
+  }catch(e){}
+})();
+</script>
 <div class="opts" id="ptabs" style="margin:12px 0 16px;flex-wrap:wrap">
   <a class="opt ${on('ventas')}" href="?t=${token}${meq}&vista=ventas" style="text-decoration:none">Ventas</a>
   <a class="opt ${on('link')}" href="?t=${token}${meq}&vista=link" style="text-decoration:none">Link para clientes</a>
