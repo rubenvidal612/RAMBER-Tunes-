@@ -35,15 +35,15 @@ export function TopBar({ className, onMenuClick, onCreditsClick, credits, bankCr
 
         {typeof engineCredits === 'number' ? (
           <div
-            className="hidden md:flex items-center gap-1.5 rounded-full px-3 py-1.5 border"
+            className="flex items-center gap-1 sm:gap-1.5 rounded-full px-2 sm:px-3 py-1 sm:py-1.5 border"
             style={{
               borderColor: engineCredits < 100 ? 'rgba(239,68,68,.45)' : engineCredits < 300 ? 'rgba(245,158,11,.45)' : 'rgba(168,85,247,.35)',
               background: engineCredits < 100 ? 'rgba(239,68,68,.12)' : engineCredits < 300 ? 'rgba(245,158,11,.10)' : 'rgba(168,85,247,.10)',
             }}
             title="Créditos del motor LucIAna V1 (Treblo)"
           >
-            <span className="text-[10px] uppercase tracking-wide text-slate-400">Motor</span>
-            <strong className="text-[12px] font-extrabold" style={{ color: engineCredits < 100 ? '#fca5a5' : engineCredits < 300 ? '#fcd34d' : '#e9d5ff' }}>
+            <span className="hidden sm:inline text-[10px] uppercase tracking-wide text-slate-400">Motor</span>
+            <strong className="text-[11px] sm:text-[12px] font-extrabold" style={{ color: engineCredits < 100 ? '#fca5a5' : engineCredits < 300 ? '#fcd34d' : '#e9d5ff' }}>
               {engineCredits.toLocaleString('es-MX')}
             </strong>
           </div>
