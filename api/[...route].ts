@@ -438,7 +438,20 @@ async function lucianaV1Balance(req: any, res: any) {
   const esperada = process.env.LUCIANA_FORM_TOKEN || "luciana-form-2026";
   let dada = "";
   try { dada = new URL(req.url, "http://x").searchParams.get("key") || ""; } catch {}
-  if (dada !== esperada) return v1Responder(res, 401, { error: "unauthorized" });
+  if (dada !== esperada) {
+    // También el dueño/admin puede consultarlo con su sesión.
+    let esAdmin = false;
+    try {
+      const r = await fetch(String(process.env.SUPABASE_URL || "") + "/auth/v1/user", {
+        headers: { apikey: String(process.env.SUPABASE_ANON_KEY || ""), authorization: String(req.headers?.authorization || "") },
+      });
+      if (r.ok) {
+        const u: any = await r.json().catch(() => ({}));
+        esAdmin = isAdminEmail(u?.email);
+      }
+    } catch {}
+    if (!esAdmin) return v1Responder(res, 401, { error: "unauthorized" });
+  }
   if (!trebloListo()) return v1Responder(res, 503, { error: "El motor LucIAna V1 está apagado." });
   const creditos = await trebloSaldo();
   return v1Responder(res, 200, {

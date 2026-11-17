@@ -7,11 +7,12 @@ interface TopBarProps {
   onCreditsClick?: () => void;
   credits?: number;
   bankCredits?: number | null;
+  engineCredits?: number | null;
   showBank?: boolean;
   hideMenu?: boolean;
 }
 
-export function TopBar({ className, onMenuClick, onCreditsClick, credits, bankCredits, showBank, hideMenu }: TopBarProps) {
+export function TopBar({ className, onMenuClick, onCreditsClick, credits, bankCredits, engineCredits, showBank, hideMenu }: TopBarProps) {
   return (
     <header className={cn('luciana-topbar', className)}>
       <div className="luciana-brand" aria-label="LucIAna Music">
@@ -31,6 +32,22 @@ export function TopBar({ className, onMenuClick, onCreditsClick, credits, bankCr
           <strong>{Number(credits || 0).toLocaleString('es-MX', { maximumFractionDigits: 1 })}</strong>
           <ChevronDown className="w-4 h-4 text-slate-500 hidden sm:block" />
         </button>
+
+        {typeof engineCredits === 'number' ? (
+          <div
+            className="hidden md:flex items-center gap-1.5 rounded-full px-3 py-1.5 border"
+            style={{
+              borderColor: engineCredits < 100 ? 'rgba(239,68,68,.45)' : engineCredits < 300 ? 'rgba(245,158,11,.45)' : 'rgba(168,85,247,.35)',
+              background: engineCredits < 100 ? 'rgba(239,68,68,.12)' : engineCredits < 300 ? 'rgba(245,158,11,.10)' : 'rgba(168,85,247,.10)',
+            }}
+            title="Créditos del motor LucIAna V1 (Treblo)"
+          >
+            <span className="text-[10px] uppercase tracking-wide text-slate-400">Motor</span>
+            <strong className="text-[12px] font-extrabold" style={{ color: engineCredits < 100 ? '#fca5a5' : engineCredits < 300 ? '#fcd34d' : '#e9d5ff' }}>
+              {engineCredits.toLocaleString('es-MX')}
+            </strong>
+          </div>
+        ) : null}
 
         {showBank ? (
           <div className="hidden lg:flex luciana-bank-pill">

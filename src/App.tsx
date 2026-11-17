@@ -1994,6 +1994,23 @@ export default function App() {
   const lyricLineRefs = useRef<Array<HTMLDivElement | null>>([]);
   const lastActiveLyricRef = useRef<number>(-1);
   const { credits, internalCredits, isAdmin, hasPaid, refreshCredits, error: creditsError } = useUserCredits();
+  const [engineCredits, setEngineCredits] = useState<number | null>(null);
+  useEffect(() => {
+    if (!isAdmin) { setEngineCredits(null); return; }
+    let vivo = true;
+    const cargar = async () => {
+      try {
+        const t = await (await import('./lib/supabaseBrowser')).supabaseBrowser.auth.getSession();
+        const token = t?.data?.session?.access_token || '';
+        const r = await fetch('/api/luciana/v1-balance', { headers: token ? { authorization: 'Bearer ' + token } : {} });
+        const j = await r.json().catch(() => ({}));
+        if (vivo && typeof j?.creditos === 'number') setEngineCredits(j.creditos);
+      } catch {}
+    };
+    cargar();
+    const id = setInterval(cargar, 120000);
+    return () => { vivo = false; clearInterval(id); };
+  }, [isAdmin]);
   const lastCreditsErrorRef = useRef<string>('');
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [installPromptEvent, setInstallPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
@@ -4697,6 +4714,7 @@ export default function App() {
         onCreditsClick={() => handleTabChange('planes')}
         credits={displayCredits}
         bankCredits={internalCredits}
+        engineCredits={isAdmin ? engineCredits : null}
         showBank={false}
         hideMenu
       />
