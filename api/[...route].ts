@@ -21113,12 +21113,26 @@ const formHandler = (() => {
 
     const sig = await panelAuth(req);
     let allowed = !!sig;
+    let viewerEmail = "";
+    let esVendedor = false;
     if (!allowed) {
       const u = await userFromReq(req);
       if (u) {
         const email = String(u.email || "").trim().toLowerCase();
+        viewerEmail = email;
         const dueno = String(process.env.LUCIANA_OWNER_EMAIL || "rubenfiverr612@gmail.com").trim().toLowerCase();
         allowed = isAdminEmail(u.email) || email === dueno;
+        if (!allowed) {
+          // ¿Es vendedor? Entonces puede abrir pedidos.
+          try {
+            const dbv = await admin();
+            const vs: any = await dbv.from("vendor_settings").select("user_id").eq("user_id", u.id).maybeSingle();
+            if (vs?.data?.user_id) {
+              esVendedor = true;
+              allowed = true;
+            }
+          } catch {}
+        }
       }
     }
     if (!allowed) return sendJson(res, 401, { error: "unauthorized" });
@@ -21131,6 +21145,15 @@ const formHandler = (() => {
     if (!row) return sendJson(res, 404, { error: "not_found" });
 
     const view = orderView(row);
+
+    // Un vendedor solo ve sus pedidos, los compartidos con él o los que aún no tienen dueño.
+    if (esVendedor) {
+      const ex: any = (row as any)?.extra || {};
+      const dueño = String(ex.owner_email || "").trim().toLowerCase();
+      const compartidos = Array.isArray(ex.shared_with) ? ex.shared_with.map((x: any) => String(x).toLowerCase()) : [];
+      const suyo = !dueño || dueño === viewerEmail || compartidos.includes(viewerEmail);
+      if (!suyo) return sendJson(res, 403, { error: "Este pedido es de otro vendedor." });
+    }
     if (view.audio_path) {
       view.audio_url = "/api/form/audio?t=" + encodeURIComponent(formToken()) + "&id=" + encodeURIComponent(view.id);
     }
