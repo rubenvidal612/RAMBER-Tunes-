@@ -493,37 +493,13 @@ async function lucianaV1FinishCron(req: any, res: any) {
         const base = titulo.replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, "-").slice(0, 60) || "cancion";
         const key = "imports/" + uid + "/" + Date.now() + "_" + base + (i ? "_" + (i + 1) : "") + ".mp3";
         const url = await uploadToR2(key, buf, "audio/mpeg");
-        const ins: any = await db.from("library_items").insert({
-          user_id: uid,
-          type: "song",
-          title: i ? titulo + " (" + (i + 1) + ")" : titulo,
+        const guardada = await v1UpsertCancion(db, uid, {
+          taskId, i, titulo,
+          estilo: String(extra?.style || extra?.prompt || "").slice(0, 600),
           lyrics: estado.lyrics || extra?.lyrics || "",
-          audio_url: url,
-          is_cover: false,
-          provider: "treblo",
-          model_version: "luciana_v1",
-          suno_task_id: "treblo:" + taskId,
-          suno_audio_id: "treblo-" + taskId + "-" + i,
-        }).select("*").single();
-        if (ins?.error && /provider_check/i.test(String(ins.error.message || ""))) {
-          const alt: any = await db.from("library_items").insert({
-            user_id: uid,
-            type: "song",
-            title: i ? titulo + " (" + (i + 1) + ")" : titulo,
-            lyrics: estado.lyrics || extra?.lyrics || "",
-            audio_url: url,
-            is_cover: false,
-            provider: "suno",
-            model_version: "luciana_v1",
-            suno_task_id: "treblo:" + taskId,
-            suno_audio_id: "treblo-" + taskId + "-" + i,
-          }).select("*").single();
-          if (alt?.error) throw alt.error;
-          guardados.push({ title: alt?.data?.title || titulo, audio_url: url, id: alt?.data?.id || null });
-          continue;
-        }
-        if (ins?.error) throw ins.error;
-        guardados.push({ title: ins?.data?.title || titulo, audio_url: url, id: ins?.data?.id || null });
+          url,
+        });
+        guardados.push({ title: guardada?.title || titulo, audio_url: url, id: guardada?.id || null });
       } catch (e: any) {
         console.error("[luciana-v1 cron] no pude archivar", i, e?.message || e);
       }
@@ -546,6 +522,41 @@ async function lucianaV1FinishCron(req: any, res: any) {
   }
 
   return v1Responder(res, 200, { ok: true, revisadas: (filas || []).length, resultados });
+}
+
+async function v1UpsertCancion(db: any, uid: string, params: {
+  taskId: string; i: number; titulo: string; estilo?: string; lyrics?: string; url?: string;
+}) {
+  const audioId = "treblo-" + params.taskId + "-" + params.i;
+  const base: any = {
+    user_id: uid,
+    type: "song",
+    title: params.i ? params.titulo + " (" + (params.i + 1) + ")" : params.titulo,
+    provider: "treblo",
+    model_version: "luciana_v1",
+    suno_task_id: "treblo:" + params.taskId,
+    suno_audio_id: audioId,
+  };
+  if (params.estilo) {
+    base.description = params.estilo;
+    base.metadata = { style: params.estilo, provider: "treblo", model_version: "luciana_v1" };
+  }
+  if (params.lyrics) base.lyrics = params.lyrics;
+  if (params.url) base.audio_url = params.url;
+
+  const { data: existente } = await db.from("library_items").select("id")
+    .eq("user_id", uid).eq("suno_audio_id", audioId).maybeSingle();
+  if (existente?.id) {
+    const upd: any = await db.from("library_items").update(base).eq("id", existente.id).select("*").single();
+    if (upd?.error) throw upd.error;
+    return upd.data;
+  }
+  let ins: any = await db.from("library_items").insert(base).select("*").single();
+  if (ins?.error && /provider_check/i.test(String(ins.error.message || ""))) {
+    ins = await db.from("library_items").insert({ ...base, provider: "suno" }).select("*").single();
+  }
+  if (ins?.error) throw ins.error;
+  return ins.data;
 }
 
 async function lucianaV1Create(req: any, res: any) {
@@ -600,6 +611,13 @@ async function lucianaV1Create(req: any, res: any) {
       extra: { provider: "treblo", mode: "voice", title, prompt, style: prompt, style_strength: fuerzaEstilo, lyrics, audio_ref: audioPath || audioUrl, status: "processing" },
     });
 
+    // Fila provisional: la canción aparece ya en la biblioteca como "En producción".
+    try {
+      await v1UpsertCancion(auth.db, auth.user.id, { taskId, i: 0, titulo: title, estilo: prompt, lyrics });
+    } catch (e: any) {
+      console.error("[luciana-v1] no pude crear la fila provisional", e?.message || e);
+    }
+
     return v1Responder(res, 200, { ok: true, taskId, provider: "treblo", credits: LUCIANA_V1_COST });
   } catch (e: any) {
     if (consumido) await adjustUserCredits(auth.db, auth.user.id, LUCIANA_V1_COST);
@@ -653,29 +671,10 @@ async function lucianaV1Status(req: any, res: any) {
         const key = "imports/" + auth.user.id + "/" + Date.now() + "_" + base + (i ? "_" + (i + 1) : "") + ".mp3";
         const url = await uploadToR2(key, buf, "audio/mpeg");
         const estilo = String(extra?.style || extra?.prompt || "").slice(0, 600);
-        const filaBase: any = {
-          user_id: auth.user.id,
-          type: "song",
-          title: i ? titulo + " (" + (i + 1) + ")" : titulo,
-          description: estilo || null,
-          lyrics: estado.lyrics || extra?.lyrics || "",
-          audio_url: url,
-          is_cover: false,
-          model_version: "luciana_v1",
-          metadata: { style: estilo, provider: "treblo", model_version: "luciana_v1" },
-          suno_task_id: "treblo:" + taskId,
-          suno_audio_id: "treblo-" + taskId + "-" + i,
-        };
-        let ins: any = await auth.db.from("library_items")
-          .insert({ ...filaBase, provider: "treblo" }).select("*").single();
-        // La tabla restringe provider a una lista cerrada; si 'treblo' aún no está
-        // permitido, se guarda igual (el motor se distingue por model_version).
-        if (ins?.error && /provider_check/i.test(String(ins.error.message || ""))) {
-          ins = await auth.db.from("library_items")
-            .insert({ ...filaBase, provider: "suno" }).select("*").single();
-        }
-        if ((ins as any)?.error) throw (ins as any).error;
-        guardados.push({ title: (ins as any)?.data?.title || titulo, audio_url: url, id: (ins as any)?.data?.id || null });
+        const guardada = await v1UpsertCancion(auth.db, auth.user.id, {
+          taskId, i, titulo, estilo, lyrics: estado.lyrics || extra?.lyrics || "", url,
+        });
+        guardados.push({ title: guardada?.title || titulo, audio_url: url, id: guardada?.id || null });
       } catch (e: any) {
         erroresArchivo.push(String((e as any)?.message || e).slice(0, 400));
         console.error("[luciana-v1] no pude archivar la pista", i, e?.message || e);
