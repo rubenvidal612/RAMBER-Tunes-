@@ -4854,7 +4854,7 @@ function ReviewStep({ data, setData, creativity, instruction, audioWeight, setTo
       </div>
       <button className="mock-generate" disabled={submitting || !isReady} onClick={() => handlers?.handleSubmitGenerate?.()}>
         {submitting ? <Loader2 size={22} className="animate-spin" /> : <MusicNote size={22} weight="fill" />}
-        <span style={{ marginLeft: submitting ? 10 : 8 }}>{submitting ? "Generando…" : `Generar canción (${costCredits} créditos)`}</span>
+        <span style={{ marginLeft: submitting ? 10 : 8 }}>{submitting ? "Generando…" : data.model === "LucIAna V1" ? `Generar canción (${costCredits} créditos) · 1 versión` : `Generar canción (${costCredits} créditos)`}</span>
       </button>
       <p className="safe-note"><Info size={18} /> El botón solo se habilita al completar todos los requisitos. Después de generar, irás a tu Biblioteca para ver el progreso.</p>
     </section>
@@ -6652,28 +6652,30 @@ function ApprovedCreateContent(props) {
             setToast(cj?.error || 'No se pudo generar con LucIAna V1.');
             return false;
           }
-          setToast('LucIAna V1 está creando tu canción con tu voz. Suele tardar 1 a 3 minutos…');
-          for (let i = 0; i < 60; i++) {
-            await new Promise((r) => setTimeout(r, 5000));
-            const sr = await fetch('/api/luciana/v1-status?taskId=' + encodeURIComponent(cj.taskId), {
-              headers: { authorization: `Bearer ${t.token}` },
-            });
-            const sj = await sr.json().catch(() => ({}));
-            if (sj?.status === 'success') {
-              setToast('¡Listo! Tu canción con LucIAna V1 ya está en tu biblioteca.');
-              try { handlers?.onSongCreated?.(); } catch {}
-              try { onSongCreated?.(); } catch {}
-              try { onGoLibrary?.(); } catch {}
-              try { window.dispatchEvent(new Event('ramber:refreshLibrary')); } catch {}
-              return true;
+          setToast('LucIAna V1 está cantando con tu voz. Te llevo a tu biblioteca: aparecerá en 1 a 3 minutos.');
+          try { onGoLibrary?.(); } catch {}
+          // Vigilancia en segundo plano: no bloquea la pantalla.
+          (async () => {
+            for (let i = 0; i < 90; i++) {
+              await new Promise((r) => setTimeout(r, 5000));
+              try {
+                const sr = await fetch('/api/luciana/v1-status?taskId=' + encodeURIComponent(cj.taskId), {
+                  headers: { authorization: `Bearer ${t.token}` },
+                });
+                const sj = await sr.json().catch(() => ({}));
+                if (sj?.status === 'success' || sj?.status === 'failure') {
+                  try { handlers?.onSongCreated?.(); } catch {}
+                  try { onSongCreated?.(); } catch {}
+                  try { window.dispatchEvent(new Event('ramber:refreshLibrary')); } catch {}
+                  if (sj?.status === 'failure') {
+                    setToast(sj?.error || 'El motor no pudo generar la canción. Te devolvimos los créditos.');
+                  }
+                  return;
+                }
+              } catch {}
             }
-            if (sj?.status === 'failure') {
-              setToast(sj?.error || 'El motor no pudo generar la canción. Te devolvimos los créditos.');
-              return false;
-            }
-          }
-          setToast('Tu canción sigue en proceso. Revísala en tu biblioteca en unos minutos.');
-          return false;
+          })();
+          return true;
         } catch (e) {
           setToast('No se pudo generar con LucIAna V1. No se cobraron créditos.');
           return false;
