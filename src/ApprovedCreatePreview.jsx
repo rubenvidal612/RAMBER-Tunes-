@@ -3155,7 +3155,7 @@ function StartStep({ data, setData, setToast, handlers }) {
       return;
     }
     previousVoiceRef.current = { voice: data.voice, model: data.model, voiceProfile: data.voiceProfile };
-    setData((current) => ({ ...current, voice: 'clone', model: 'Suno V6', voiceProfile: null }));
+    setData((current) => ({ ...current, voice: 'clone', voiceProfile: null }));
     setClonePickerOpen(true);
   };
 
