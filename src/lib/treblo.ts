@@ -118,6 +118,8 @@ export async function crearCancionConVoz(params: {
   lyrics?: string;
   instrumental?: boolean;
   modelo?: string;
+  /** Fuerza del estilo (0-1 es suave; 3-4 mandan más). El audio de referencia compite con el estilo. */
+  promptStrength?: number;
 }): Promise<string> {
   const body: Record<string, any> = {
     audio_upload_id: params.audioUploadId,
@@ -125,6 +127,7 @@ export async function crearCancionConVoz(params: {
     prompt: String(params.prompt || "").slice(0, 900) || "pop latin",
     output_format: "mp3",
     instrumental: Boolean(params.instrumental),
+    prompt_strength: Number.isFinite(Number(params.promptStrength)) ? Number(params.promptStrength) : 3,
   };
   const letra = String(params.lyrics || "").trim();
   if (letra && !params.instrumental) body.lyrics = letra.slice(0, 6000);

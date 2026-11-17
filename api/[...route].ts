@@ -592,7 +592,7 @@ async function lucianaV1Create(req: any, res: any) {
       kind: LUCIANA_V1_KIND,
       cost: LUCIANA_V1_COST,
       consumed: true,
-      extra: { provider: "treblo", mode: "voice", title, prompt, lyrics, audio_ref: audioPath || audioUrl, status: "processing" },
+      extra: { provider: "treblo", mode: "voice", title, prompt, style: prompt, lyrics, audio_ref: audioPath || audioUrl, status: "processing" },
     });
 
     return v1Responder(res, 200, { ok: true, taskId, provider: "treblo", credits: LUCIANA_V1_COST });
@@ -647,14 +647,17 @@ async function lucianaV1Status(req: any, res: any) {
         const base = titulo.replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, "-").slice(0, 60) || "cancion";
         const key = "imports/" + auth.user.id + "/" + Date.now() + "_" + base + (i ? "_" + (i + 1) : "") + ".mp3";
         const url = await uploadToR2(key, buf, "audio/mpeg");
+        const estilo = String(extra?.style || extra?.prompt || "").slice(0, 600);
         const filaBase: any = {
           user_id: auth.user.id,
           type: "song",
           title: i ? titulo + " (" + (i + 1) + ")" : titulo,
+          description: estilo || null,
           lyrics: estado.lyrics || extra?.lyrics || "",
           audio_url: url,
           is_cover: false,
           model_version: "luciana_v1",
+          metadata: { style: estilo, provider: "treblo", model_version: "luciana_v1" },
           suno_task_id: "treblo:" + taskId,
           suno_audio_id: "treblo-" + taskId + "-" + i,
         };
