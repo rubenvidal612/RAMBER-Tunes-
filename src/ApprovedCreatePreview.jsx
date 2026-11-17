@@ -4881,6 +4881,16 @@ function ReviewStep({ data, setData, creativity, instruction, audioWeight, setTo
         <div className="review-card"><span>Ajustes</span><strong>{creativity}% rareza</strong><small>{instruction}% estilo{data.audioSource === 'upload' && Boolean(handlers?.hasUploadedAudio) ? ` · ${audioWeight}% audio` : ''}</small></div>
         <div className="review-card review-card-wide"><span>Instrucción o estilo musical</span><strong>{data.style || "Todavía no escribiste una instrucción"}</strong><small>{data.negative ? `Evitar: ${data.negative}` : "Sin estilos o elementos excluidos"}</small></div>
       </div>
+      {data.model === "LucIAna V1" && !(hasUploadedReferenceAudio || Boolean(data.file) || Boolean(handlers?.uploadedAudioName)) ? (
+        <div style={{ margin: '0 0 14px', padding: '14px 16px', borderRadius: 14, background: 'rgba(239,68,68,.10)', border: '1px solid rgba(239,68,68,.35)' }}>
+          <strong style={{ display: 'block', marginBottom: 6 }}>Falta tu audio para LucIAna V1</strong>
+          <span style={{ fontSize: 13, lineHeight: 1.5, color: '#e2e8f0' }}>
+            Ve al <strong>paso 1</strong> y en la sección <strong>“¿Tienes un audio?”</strong> pulsa
+            <strong> “Subir mi audio”</strong> o <strong>“Cantar”</strong>.
+            Con este motor <strong>no necesitas clonar la voz</strong>: tu audio es la muestra.
+          </span>
+        </div>
+      ) : null}
       <div className="requirements-box">
         <div><strong>Antes de generar</strong><span>{submitting ? (data.model === 'LucIAna V1' ? "LucIAna V1 está cantando con tu voz…" : MODEL_TO_PROVIDER[data.model] === 'mureka' ? "Enviando a Mureka…" : "Enviando a Suno…") : isReady ? "Todo está completo" : "Completa los elementos pendientes"}</span></div>
         <ul>{requirements.map(([label, complete]) => <li key={label} className={complete ? "complete" : "pending"}>{complete ? <Check size={18} weight="bold" /> : <X size={17} weight="bold" />}<span>{label}</span></li>)}</ul>
