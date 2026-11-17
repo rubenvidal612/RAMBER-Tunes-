@@ -4899,6 +4899,16 @@ function ReviewStep({ data, setData, creativity, instruction, audioWeight, setTo
         {submitting ? <Loader2 size={22} className="animate-spin" /> : <MusicNote size={22} weight="fill" />}
         <span style={{ marginLeft: submitting ? 10 : 8 }}>{submitting ? "Generando…" : data.model === "LucIAna V1" ? `Generar canción (${costCredits} créditos) · 1 versión` : `Generar canción (${costCredits} créditos)`}</span>
       </button>
+      {(() => {
+        const faltan = requirements.filter(([, ok]) => !ok).map(([label]) => label);
+        if (!faltan.length) return null;
+        return (
+          <div style={{ margin: '10px 0 0', padding: '12px 14px', borderRadius: 12, background: 'rgba(239,68,68,.10)', border: '1px solid rgba(239,68,68,.35)' }}>
+            <strong style={{ display: 'block', marginBottom: 4, fontSize: 13 }}>Para poder generar falta:</strong>
+            <span style={{ fontSize: 13, color: '#fca5a5' }}>{faltan.join(' · ')}</span>
+          </div>
+        );
+      })()}
       <p className="safe-note"><Info size={18} /> El botón solo se habilita al completar todos los requisitos. Después de generar, irás a tu Biblioteca para ver el progreso.</p>
     </section>
   );
