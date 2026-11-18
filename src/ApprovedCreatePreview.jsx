@@ -2370,6 +2370,28 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       .catch(() => {});
     return () => { cancelado = true; };
   }, [validation.phrase]);
+  const [micOk, setMicOk] = useState(false);
+  useEffect(() => {
+    let vivo = true;
+    const revisar = async () => {
+      try {
+        const p = await navigator.permissions.query({ name: 'microphone' });
+        if (vivo) setMicOk(p.state === 'granted');
+        p.onchange = () => { if (vivo) setMicOk(p.state === 'granted'); };
+      } catch {}
+    };
+    revisar();
+    return () => { vivo = false; };
+  }, []);
+  const activarMicro = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      phrasePreparedStreamRef.current = stream;
+      setMicOk(true);
+    } catch {
+      setToast('No pudimos activar el micrófono. Revisa los permisos del navegador.');
+    }
+  };
   // ---------- una sola tarjeta ----------
   const frase = (validation.phrase || "").toString().trim();
   const listo = Boolean(voiceGen.voiceId) && isVoiceAvailable(voiceGen.isAvailable);
@@ -2500,26 +2522,33 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
               Ya casi. No cierres esta pantalla.
             </p>
             <p style={{ margin: 0, textAlign: "center", color: "#7f8a9b", fontSize: 12, lineHeight: 1.5 }}>
-              Enseguida saldrá una frase corta: cántala suave, <strong>en el mismo tono de tu audio</strong>.
+              Enseguida saldrá una frase: cántala <strong>en el mismo tono de tu audio</strong>.
             </p>
           </>
         ) : null}
 
         {estado === "frase" ? (
           <>
-            <strong style={{ fontSize: 14 }}>Repite esta frase:</strong>
+            <strong style={{ fontSize: 17 }}>Repite esta frase:</strong>
             <div style={{
-              padding: "16px 18px", borderRadius: 14, background: "rgba(34,211,238,.08)",
-              border: "1px solid rgba(34,211,238,.35)", fontSize: 16, lineHeight: 1.55, fontStyle: "italic",
+              padding: "20px 20px", borderRadius: 16, background: "rgba(34,211,238,.08)",
+              border: "1px solid rgba(34,211,238,.45)", fontSize: 23, lineHeight: 1.45, fontStyle: "italic",
+              fontWeight: 700, textAlign: "center",
             }}>
               “{frase || "Preparando tu frase…"}”
             </div>
-            <p style={{ margin: 0, color: "#93a1b5", fontSize: 13, lineHeight: 1.5 }}>
+            <p style={{ margin: 0, color: "#c3cbd8", fontSize: 15, lineHeight: 1.5 }}>
               Dilo con tu voz normal, como si me lo platicaras. No hace falta cantarlo.
             </p>
-            <p style={{ margin: 0, color: "#7f8a9b", fontSize: 11.5 }}>
-              Usaremos el audio que ya subiste para tu canción.
-            </p>
+            {!micOk ? (
+              <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(168,85,247,.12)", border: "1px solid rgba(168,85,247,.4)" }}>
+                <strong style={{ display: "block", fontSize: 14, marginBottom: 4 }}>🎤 Activa tu micrófono</strong>
+                <span style={{ fontSize: 13, color: "#c3cbd8" }}>Solo se pide una vez. Después queda guardado.</span>
+                <button type="button" style={{ ...botonSecundario, marginTop: 10 }} onClick={() => { activarMicro(); }}>
+                  Activar micrófono
+                </button>
+              </div>
+            ) : null}
             <button
               type="button"
               style={{ ...botonGrande, borderRadius: 999, padding: "22px 18px", fontSize: 17 }}
@@ -2536,13 +2565,14 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         {estado === "grabando" ? (
           <>
             <div style={{
-              padding: "12px 14px", borderRadius: 12, background: "rgba(34,211,238,.08)",
-              border: "1px solid rgba(34,211,238,.35)", fontSize: 15, lineHeight: 1.5, fontStyle: "italic",
+              padding: "18px 18px", borderRadius: 16, background: "rgba(34,211,238,.10)",
+              border: "1px solid rgba(34,211,238,.5)", fontSize: 21, lineHeight: 1.45, fontStyle: "italic",
+              fontWeight: 700, textAlign: "center",
             }}>
               “{frase || "Preparando tu frase…"}”
             </div>
-            <p style={{ margin: 0, color: "#93a1b5", fontSize: 12, textAlign: "center" }}>
-              Dilo completo y claro. Se detiene solo.
+            <p style={{ margin: 0, color: "#c3cbd8", fontSize: 15, textAlign: "center" }}>
+              Canta la frase completa.
             </p>
             {phraseCountdown.active ? (
               <strong style={{ textAlign: "center", fontSize: 44, color: "#22d3ee" }}>{phraseCountdown.step || "3"}</strong>
