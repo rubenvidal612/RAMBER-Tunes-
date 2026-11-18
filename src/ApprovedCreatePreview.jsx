@@ -1478,6 +1478,16 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       "loadedmetadata",
       () => {
         const duration = Math.max(1, Math.floor(audio.duration));
+        if (duration < MINIMO_SEGUNDOS) {
+          setSaveError("Tu grabación dura " + formatearDuracion(duration) + ". Necesitamos al menos 20 segundos para reconocer tu voz.");
+          try { URL.revokeObjectURL(objectUrl); } catch {}
+          return;
+        }
+        if (duration > MAXIMO_SEGUNDOS) {
+          setSaveError("Tu grabación dura " + formatearDuracion(duration) + ". El máximo es 6 minutos.");
+          try { URL.revokeObjectURL(objectUrl); } catch {}
+          return;
+        }
         setProfile((current) => ({
           ...current,
           sourceAudio: file,
@@ -2345,7 +2355,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
         body: JSON.stringify({
           sunoVoiceId: voiceId,
-          name: profile.name,
+          name: (profile.name || "Mi voz").trim() || "Mi voz",
           status: voiceGen.isAvailable ? "ready" : "processing",
           taskId,
           meta,
@@ -2538,7 +2548,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
                 Solo tu voz, sin instrumental ni otras personas. Este mismo audio se usa para tu cover, así no grabas dos veces.
               </span>
               <input type="file" accept="audio/*" style={{ display: "none" }}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) applySourceAudioFile(f); }} />
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) acceptMp3(f, "sourceAudio"); }} />
             </label>
             <div style={{ textAlign: "center", color: "#6b7686", fontSize: 11, marginTop: 6 }}>o, si no tienes el archivo a mano</div>
             <button type="button" style={botonSecundario} onClick={() => { startSourceRecording().catch(() => {}); }}>
@@ -2617,7 +2627,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
               <strong style={{ textAlign: "center", fontSize: 52, color: "#22d3ee" }}>{phraseCountdown.step || "3"}</strong>
             ) : null}
             {phraseMeterStream ? (
-              <VoiceMeter onFinished={() => {}} stream={phraseMeterStream} />
+              <VoiceMeter mode="indicator" onFinished={() => {}} stream={phraseMeterStream} />
             ) : (
               medidor
             )}
@@ -2662,11 +2672,23 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
               style={botonGrande}
               onClick={async () => {
                 const nombre = (profile.name || "Mi voz").trim() || "Mi voz";
-                try { await saveToSunoVoices(); } catch {}
+                const audioUrl = (sourceUpload.url || "").toString().trim();
+                const audioPath = (sourceUpload.key || "").toString().trim();
+                // No avanzar si el audio original no quedó disponible.
+                if (!audioUrl || !voiceGen.voiceId) {
+                  setSaveError("Aún no está todo listo. Espera a que el audio y la voz estén confirmados.");
+                  return;
+                }
+                const guardado = await saveToSunoVoices();
+                if (!guardado) return;
                 try {
                   if (typeof window !== "undefined") {
                     window.localStorage.setItem("ramber.vozLista_v1", JSON.stringify({
-                      name: nombre, voiceId: voiceGen.voiceId, audioUrl: sourceUpload.url || "",
+                      name: nombre,
+                      voiceId: voiceGen.voiceId,
+                      audioUrl,
+                      audioPath,
+                      audioDuration: Number(profile.audioDuration) || 0,
                     }));
                   }
                 } catch {}
@@ -5573,7 +5595,7 @@ function ApprovedCreateContent(props) {
     setCreditsGate(null);
   }, [safeUserId]);
 
-  // Si viene del clonador, se usa esa voz y se salta directo a la letra.
+  // Si viene del clonador, se usa esa voz Y el audio original, y se salta a la letra.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try {
@@ -5582,12 +5604,18 @@ function ApprovedCreateContent(props) {
       window.localStorage.removeItem('ramber.vozLista_v1');
       const v = JSON.parse(raw);
       if (!v || typeof v !== 'object') return;
+      bridgeAppliedRef.current = true;
       setData((current) => ({
         ...current,
         voice: 'clone',
         voiceProfile: v.voiceId ? { voiceId: v.voiceId, name: v.name || 'Mi voz', source: 'suno' } : current.voiceProfile,
         model: 'Suno V6',
+        audioSource: 'upload',
+        audioInputMode: 'upload',
+        lyrics: '',
       }));
+      if (typeof v.audioUrl === 'string' && v.audioUrl) setAudioUploadUrl(v.audioUrl.trim());
+      if (typeof v.audioPath === 'string' && v.audioPath) setAudioUploadPath(v.audioPath.trim());
       setStep(1);
       setToast('Tu voz "' + (v.name || 'Mi voz') + '" está lista. Ahora escribe la letra.');
     } catch {}
@@ -5626,6 +5654,9 @@ function ApprovedCreateContent(props) {
 
   useEffect(() => {
     if (!draftKey) return;
+    // Si acabamos de llegar del clonador, NO restaurar el borrador viejo:
+    // el usuario debe ver su voz nueva y el audio original, no una canción anterior.
+    if (bridgeAppliedRef.current) return;
     try {
       let raw = window.localStorage.getItem(draftKey);
       if (!raw && legacyDraftKey && legacyDraftKey !== draftKey) {
@@ -6299,6 +6330,7 @@ function ApprovedCreateContent(props) {
     }
   };
 
+  const bridgeAppliedRef = useRef(false);
   const autoTranscribedUrlRef = useRef('');
   useEffect(() => {
     if (!audioUploadUrl) return;
