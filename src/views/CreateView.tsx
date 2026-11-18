@@ -5807,7 +5807,26 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                               if (!id) return;
                               setVoiceDetailsSaving(true);
                               persistSunoVoiceProfile(id)
-                                .then(() => {
+                                .then(async () => {
+                                  // Reuse the ORIGINAL profile sample for the cover, never the verification recording.
+                                  if (!standaloneVoices && voiceSourceFile) {
+                                    const original = voiceSourceFile;
+                                    const t = await getAccessToken();
+                                    if (!t.ok) throw new Error(t.error || 'No se pudo iniciar sesión para subir el audio original.');
+                                    const uploaded = await uploadAudioForVoice(t.token, original);
+                                    const originalUrl = String(uploaded?.url || '').trim();
+                                    if (!originalUrl) throw new Error('No se recibió una URL válida del audio original. Reintenta guardar.');
+                                    setAudioFile(original);
+                                    setAudioUploadUrl(originalUrl);
+                                    setAudioUploadPath(String(uploaded?.key || '').trim());
+                                    setAudioAction('cover');
+                                    setAudioUploadError(null);
+                                    setIsUploadingAudio(false);
+                                    setExternalAudioLabel('');
+                                    setUploadProgress(100);
+                                    setAudioDurationSec(voiceSourceDurationSec);
+                                    setIsAudioModalOpen(false);
+                                  }
                                   setIsCreateVoiceOpen(false);
                                   resetVoiceWizard();
                                   if (standaloneVoices) {
@@ -5815,7 +5834,9 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                                     setIsVoicesPickerOpen(true);
                                   }
                                 })
-                                .catch(() => {})
+                                .catch((error) => {
+                                  setVoiceCreateError(error instanceof Error ? error.message : 'No se pudo preparar el audio original.');
+                                })
                                 .finally(() => setVoiceDetailsSaving(false));
                             }}
                             disabled={voiceDetailsSaving || !(voiceGeneratedVoiceId || '').toString().trim()}
