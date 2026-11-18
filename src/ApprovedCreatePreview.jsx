@@ -2439,21 +2439,21 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
   };
   const botonGrande = {
     width: "100%", padding: "16px 18px", borderRadius: 16, border: "none", cursor: "pointer",
-    fontWeight: 900, fontSize: 15, color: "#0b1020",
+    fontWeight: 900, fontSize: 17.5, color: "#0b1020",
     background: "linear-gradient(135deg,#a855f7,#22d3ee)",
   };
   const botonSecundario = {
     width: "100%", padding: "13px 16px", borderRadius: 14, cursor: "pointer",
-    fontWeight: 800, fontSize: 14, color: "#e2e8f0",
+    fontWeight: 800, fontSize: 17, color: "#e2e8f0",
     background: "rgba(255,255,255,.06)", border: "1px solid rgba(255,255,255,.18)",
   };
   const titulo = (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <span style={{ fontSize: 22 }}>🎤</span>
-      <strong style={{ fontSize: 18 }}>Tu voz</strong>
+      <span style={{ fontSize: 23 }}>🎤</span>
+      <strong style={{ fontSize: 20 }}>Tu voz</strong>
       {estado !== "listo" ? (
         <button type="button" onClick={() => { try { cleanupPhraseRecording(); } catch {} try { onClose?.(); } catch {} }} aria-label="Cerrar"
-          style={{ marginLeft: "auto", background: "transparent", border: "none", color: "#94a3b8", fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
+          style={{ marginLeft: "auto", background: "transparent", border: "none", color: "#94a3b8", fontSize: 23, cursor: "pointer", lineHeight: 1 }}>×</button>
       ) : null}
     </div>
   );
@@ -2495,9 +2495,9 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
               border: "2px dashed rgba(168,85,247,.55)", background: "rgba(168,85,247,.07)",
             }}>
               <div style={{ fontSize: 30, marginBottom: 6 }}>📁</div>
-              <strong style={{ display: "block", fontSize: 15 }}>Arrastra tu audio</strong>
-              <span style={{ fontSize: 12, color: "#93a1b5" }}>o haz clic para buscarlo</span>
-              <span style={{ display: "block", marginTop: 10, fontSize: 12, color: "#8b95a6", lineHeight: 1.5 }}>
+              <strong style={{ display: "block", fontSize: 17.5 }}>Arrastra tu audio</strong>
+              <span style={{ fontSize: 15, color: "#93a1b5" }}>o haz clic para buscarlo</span>
+              <span style={{ display: "block", marginTop: 10, fontSize: 15, color: "#8b95a6", lineHeight: 1.5 }}>
                 Solo tu voz, sin instrumental ni otras personas. Este mismo audio se usa para tu cover, así no grabas dos veces.
               </span>
               <input type="file" accept="audio/*" style={{ display: "none" }}
@@ -2508,7 +2508,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
               🎙️ grábate ahora
             </button>
             {sourceRecording.recording ? (
-              <div style={{ textAlign: "center", color: "#fca5a5", fontSize: 13 }}>
+              <div style={{ textAlign: "center", color: "#fca5a5", fontSize: 16 }}>
                 Grabando… {sourceRecording.seconds}s
                 <button type="button" style={{ ...botonSecundario, marginTop: 8 }} onClick={() => { stopSourceRecording(); }}>Detener</button>
               </div>
@@ -2519,11 +2519,11 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         {estado === "preparando" ? (
           <>
             {puntos}
-            <strong style={{ textAlign: "center", fontSize: 15 }}>Preparando…</strong>
-            <p style={{ margin: 0, textAlign: "center", color: "#93a1b5", fontSize: 13, lineHeight: 1.5 }}>
+            <strong style={{ textAlign: "center", fontSize: 17.5 }}>Preparando…</strong>
+            <p style={{ margin: 0, textAlign: "center", color: "#93a1b5", fontSize: 16, lineHeight: 1.5 }}>
               Ya casi. No cierres esta pantalla.
             </p>
-            <p style={{ margin: 0, textAlign: "center", color: "#7f8a9b", fontSize: 12, lineHeight: 1.5 }}>
+            <p style={{ margin: 0, textAlign: "center", color: "#7f8a9b", fontSize: 15, lineHeight: 1.5 }}>
               Enseguida saldrá una frase: cántala <strong>en el mismo tono de tu audio</strong>.
             </p>
           </>
@@ -2531,21 +2531,21 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
 
         {estado === "frase" ? (
           <>
-            <strong style={{ fontSize: 17 }}>Canta esta frase:</strong>
+            <strong style={{ fontSize: 19.5 }}>Canta esta frase:</strong>
             <div style={{
               padding: "20px 20px", borderRadius: 16, background: "rgba(34,211,238,.08)",
-              border: "1px solid rgba(34,211,238,.45)", fontSize: 23, lineHeight: 1.45, fontStyle: "italic",
+              border: "1px solid rgba(34,211,238,.45)", fontSize: 26, lineHeight: 1.45, fontStyle: "italic",
               fontWeight: 700, textAlign: "center",
             }}>
               “{frase || "Preparando tu frase…"}”
             </div>
-            <p style={{ margin: 0, color: "#c3cbd8", fontSize: 15, lineHeight: 1.5 }}>
+            <p style={{ margin: 0, color: "#c3cbd8", fontSize: 17.5, lineHeight: 1.5 }}>
               Cántalo en un lugar sin eco.
             </p>
             {!micOk ? (
               <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(168,85,247,.12)", border: "1px solid rgba(168,85,247,.4)" }}>
-                <strong style={{ display: "block", fontSize: 14, marginBottom: 4 }}>🎤 Activa tu micrófono</strong>
-                <span style={{ fontSize: 13, color: "#c3cbd8" }}>Solo se pide una vez. Después queda guardado.</span>
+                <strong style={{ display: "block", fontSize: 17, marginBottom: 4 }}>🎤 Activa tu micrófono</strong>
+                <span style={{ fontSize: 16, color: "#c3cbd8" }}>Solo se pide una vez. Después queda guardado.</span>
                 <button type="button" style={{ ...botonSecundario, marginTop: 10 }} onClick={() => { activarMicro(); }}>
                   Activar micrófono
                 </button>
@@ -2553,7 +2553,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
             ) : null}
             <button
               type="button"
-              style={{ ...botonGrande, borderRadius: 999, padding: "22px 18px", fontSize: 17 }}
+              style={{ ...botonGrande, borderRadius: 999, padding: "22px 18px", fontSize: 19.5 }}
               onClick={() => { setAvisoFraseOk(true); setAvisoFrase(true); startPhraseRecording().catch(() => {}); }}
             >
               ● GRABAR
@@ -2568,23 +2568,23 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
           <>
             <div style={{
               padding: "18px 18px", borderRadius: 16, background: "rgba(34,211,238,.10)",
-              border: "1px solid rgba(34,211,238,.5)", fontSize: 21, lineHeight: 1.45, fontStyle: "italic",
+              border: "1px solid rgba(34,211,238,.5)", fontSize: 22, lineHeight: 1.45, fontStyle: "italic",
               fontWeight: 700, textAlign: "center",
             }}>
               “{frase || "Preparando tu frase…"}”
             </div>
-            <p style={{ margin: 0, color: "#c3cbd8", fontSize: 15, textAlign: "center" }}>
+            <p style={{ margin: 0, color: "#c3cbd8", fontSize: 17.5, textAlign: "center" }}>
               Canta la frase completa.
             </p>
             {phraseCountdown.active ? (
-              <strong style={{ textAlign: "center", fontSize: 44, color: "#22d3ee" }}>{phraseCountdown.step || "3"}</strong>
+              <strong style={{ textAlign: "center", fontSize: 52, color: "#22d3ee" }}>{phraseCountdown.step || "3"}</strong>
             ) : null}
             {phraseMeterStream ? (
               <VoiceMeter onFinished={() => {}} stream={phraseMeterStream} />
             ) : (
               medidor
             )}
-            <p style={{ margin: 0, textAlign: "center", color: "#93a1b5", fontSize: 12 }}>
+            <p style={{ margin: 0, textAlign: "center", color: "#93a1b5", fontSize: 15 }}>
               {phraseRecording.seconds}s
             </p>
             <button type="button" style={botonGrande} onClick={() => { stopPhraseRecording(); }}>
@@ -2596,8 +2596,8 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         {estado === "creando" ? (
           <>
             {puntos}
-            <strong style={{ textAlign: "center", fontSize: 15 }}>Creando tu voz…</strong>
-            <p style={{ margin: 0, textAlign: "center", color: "#93a1b5", fontSize: 13 }}>
+            <strong style={{ textAlign: "center", fontSize: 17.5 }}>Creando tu voz…</strong>
+            <p style={{ margin: 0, textAlign: "center", color: "#93a1b5", fontSize: 16 }}>
               Puedes seguir escribiendo tu letra mientras termina.
             </p>
           </>
@@ -2605,19 +2605,19 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
 
         {estado === "listo" ? (
           <>
-            <div style={{ textAlign: "center", fontSize: 40 }}>✅</div>
-            <strong style={{ textAlign: "center", fontSize: 18 }}>Tu voz está lista</strong>
+            <div style={{ textAlign: "center", fontSize: 48 }}>✅</div>
+            <strong style={{ textAlign: "center", fontSize: 20 }}>Tu voz está lista</strong>
             {sourcePlayerSrc ? (
               <audio controls src={sourcePlayerSrc} style={{ width: "100%" }} />
             ) : null}
-            <label style={{ fontSize: 13, color: "#c3cbd8" }}>
+            <label style={{ fontSize: 16, color: "#c3cbd8" }}>
               Ponle nombre a tu voz
               <input
                 type="text"
                 value={profile.name || ""}
                 placeholder="Mi voz"
                 onChange={(e) => setProfile((current) => ({ ...current, name: e.target.value.slice(0, 40) }))}
-                style={{ width: "100%", marginTop: 6, padding: "12px 14px", borderRadius: 12, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#e8ecf5", fontSize: 15 }}
+                style={{ width: "100%", marginTop: 6, padding: "12px 14px", borderRadius: 12, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#e8ecf5", fontSize: 17.5 }}
               />
             </label>
             <button
@@ -2646,7 +2646,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
 
         {mensajeAmable && estado !== "creando" ? (
           <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(239,68,68,.12)", border: "1px solid rgba(239,68,68,.4)" }}>
-            <span style={{ fontSize: 13, lineHeight: 1.5, color: "#fecaca" }}>{mensajeAmable}</span>
+            <span style={{ fontSize: 16, lineHeight: 1.5, color: "#fecaca" }}>{mensajeAmable}</span>
             <button
               type="button"
               style={{ ...botonSecundario, marginTop: 10 }}

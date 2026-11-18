@@ -888,7 +888,7 @@ const PROVIDER_SOURCE_AUDIO_URL_TTL_SECONDS = 60 * 60 * 24 * 7;
 // Vigencia de los enlaces firmados del audio que sube el usuario (referencia de la
 // cancion y grabacion de verificacion de la voz). Antes eran 2 horas, y el perfil
 // clonado podia quedar inservible al poco tiempo; ahora el enlace vive una semana.
-const UPLOADED_AUDIO_URL_TTL_SECONDS = 60 * 60 * 24 * 7;
+const UPLOADED_AUDIO_URL_TTL_SECONDS = 60 * 60 * 24; // 1 día: el audio del clonador no sirve para reutilizar después
 
 async function getSignedR2PutUrl(key: string, contentType: string, expiresIn: number = 600): Promise<string> {
   const env = getR2Env();
