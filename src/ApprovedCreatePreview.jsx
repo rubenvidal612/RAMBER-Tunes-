@@ -1291,7 +1291,10 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     setPhraseRecording((current) => ({ ...current, error: "" }));
     cancelPhraseCountdown();
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const yaPreparado = phrasePreparedStreamRef.current;
+      const stream = yaPreparado && yaPreparado.active !== false
+        ? yaPreparado
+        : await navigator.mediaDevices.getUserMedia({ audio: true });
       phrasePreparedStreamRef.current = stream;
       const steps = ["3", "2", "1", "¡Canta!"];
       setPhraseCountdown({ active: true, step: steps[0], error: "" });
@@ -1302,11 +1305,14 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
           return;
         }
         if (index >= steps.length - 1) {
-          setPhraseCountdown({ active: false, step: "", error: "" });
-          const prepared = phrasePreparedStreamRef.current;
-          phrasePreparedStreamRef.current = null;
-          if (!prepared) return;
-          startMediaRecorderWithStream(prepared);
+          // Deja ver "¡Canta!" un instante antes de arrancar la grabación.
+          phraseCountdownStepTimerRef.current = window.setTimeout(() => {
+            setPhraseCountdown({ active: false, step: "", error: "" });
+            const prepared = phrasePreparedStreamRef.current;
+            phrasePreparedStreamRef.current = null;
+            if (!prepared) return;
+            startMediaRecorderWithStream(prepared);
+          }, 650);
           return;
         }
         index += 1;
@@ -2349,6 +2355,21 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     if (voiceGen.voiceId || voiceGen.loading || voiceGen.taskId) return;
     startVerificationFlow().catch(() => {});
   }, [profile.verifyAudio, validation.taskId]);
+  // Al aparecer la frase se pide el micrófono una sola vez y se reutiliza.
+  useEffect(() => {
+    if (!validation.phrase) return;
+    if (phraseRecording.recording || phraseCountdown.active) return;
+    if (phrasePreparedStreamRef.current && phrasePreparedStreamRef.current.active !== false) return;
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+    let cancelado = false;
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then((stream) => {
+        if (cancelado) { try { stream.getTracks().forEach((t) => t.stop()); } catch {} return; }
+        phrasePreparedStreamRef.current = stream;
+      })
+      .catch(() => {});
+    return () => { cancelado = true; };
+  }, [validation.phrase]);
   // ---------- una sola tarjeta ----------
   const frase = (validation.phrase || "").toString().trim();
   const listo = Boolean(voiceGen.voiceId) && isVoiceAvailable(voiceGen.isAvailable);
