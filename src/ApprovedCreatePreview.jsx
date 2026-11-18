@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowLeft, ArrowRight, Library as Books, BadgeCheck as Certificate,
   MessageCircle as ChatCircle, Check, Coins, Download as DownloadSimple,
@@ -653,8 +654,8 @@ function VoiceCloneSuccessConfetti() {
     color: ["#a855f7", "#22d3ee", "#facc15", "#f472b6", "#ffffff"][i % 5],
     rotation: (i * 47) % 360,
   })), []);
-  return (
-    <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 99999, overflow: "hidden", pointerEvents: "none" }}>
+  return createPortal(
+    <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 2147483647, overflow: "hidden", pointerEvents: "none" }}>
       {pieces.map((piece, i) => (
         <span key={i} style={{
           position: "absolute", top: "-5%", left: piece.left + "%",
@@ -673,7 +674,8 @@ function VoiceCloneSuccessConfetti() {
       @media (prefers-reduced-motion: reduce) {
         [style*="lucianaVoiceConfetti"] { animation: none !important; }
       }`}</style>
-    </div>
+    </div>,
+    document.body
   );
 }
 
