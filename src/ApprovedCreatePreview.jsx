@@ -4460,9 +4460,7 @@ function LyricsStep({ data, setData, setToast, handlers }) {
 
 function StyleStep({ data, setData, creativity, setCreativity, instruction, setInstruction, audioWeight, setAudioWeight, setToast, handlers }) {
   const [modelOpen, setModelOpen] = useState(false);
-  const isMobileLayout = useMediaQuery('(max-width: 700px)');
-  const [precisionOpen, setPrecisionOpen] = useState(() => !isMobileLayout);
-  useEffect(() => { setPrecisionOpen(!isMobileLayout); }, [isMobileLayout]);
+  const [precisionOpen, setPrecisionOpen] = useState(false);
   const improving = Boolean(handlers?.isBoostingStyle);
   const translating = Boolean(handlers?.isTranslatingStyle);
   const showAudioInfluence = data.audioSource === 'upload' && (Boolean(data.file) || Boolean(handlers?.audioUploadUrl) || Boolean(handlers?.isUploadingAudio) || Boolean(handlers?.audioUploadError));
@@ -4583,51 +4581,31 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
         <div className="gender-section"><div className="gender-heading"><div><strong>Tipo de voz</strong><p>Elige qué voz interpretará la canción.</p></div><InfoTip title="Tipo de voz">Esta opción indica a Suno si deseas una voz masculina o femenina.</InfoTip></div><div className="gender-buttons"><button className={data.vocalGender === "m" ? "selected" : ""} onClick={()=>setData({...data,vocalGender:"m"})}><User size={24}/><span><strong>Voz de hombre</strong><small>Voz masculina</small></span><span className="radio"/></button><button className={data.vocalGender === "f" ? "selected" : ""} onClick={()=>setData({...data,vocalGender:"f"})}><User size={24}/><span><strong>Voz de mujer</strong><small>Voz femenina</small></span><span className="radio"/></button></div></div>
       </div>
       <div className={isMobileLayout ? "settings-panel precision-collapsible" : "settings-panel"}>
-        {isMobileLayout ? (
-          <>
-            <button
-              type="button"
-              className="precision-toggle"
-              aria-expanded={precisionOpen}
-              aria-controls={precisionControlsId}
-              onClick={() => setPrecisionOpen((v) => !v)}
-            >
-              <span className="precision-toggle-text">Ajustes de precisión</span>
-              <span className={precisionOpen ? "precision-toggle-icon open" : "precision-toggle-icon"} aria-hidden="true">▾</span>
+        <button
+          type="button"
+          className="precision-toggle"
+          aria-expanded={precisionOpen}
+          aria-controls={precisionControlsId}
+          onClick={() => setPrecisionOpen((v) => !v)}
+        >
+          <span className="precision-toggle-text">Ajustes avanzados de música</span>
+          <span className={precisionOpen ? "precision-toggle-icon open" : "precision-toggle-icon"} aria-hidden="true">▾</span>
+        </button>
+        <div id={precisionControlsId} className="precision-collapsible-body" hidden={!precisionOpen}>
+          <div className="precision-help-row">
+            <span className="precision-help-title">Ajustes avanzados de música</span>
+            <button className="icon-button info-button" type="button" aria-label="Ayuda: Ajustes avanzados de música" onClick={openPrecisionHelp}>
+              <Info size={19} />
             </button>
-            <div id={precisionControlsId} className="precision-collapsible-body" hidden={!precisionOpen}>
-              <div className="precision-help-row">
-                <span className="precision-help-title">Ajustes de precisión</span>
-                <button className="icon-button info-button" type="button" aria-label="Ayuda: Ajustes de precisión" onClick={openPrecisionHelp}>
-                  <Info size={19} weight="bold" />
-                </button>
-              </div>
-              <p className="panel-intro">Puedes moverlos o dejarlos como están.</p>
-              {isMureka && <p className="panel-intro" style={{ opacity: 0.6 }}>Algunos parámetros (Rareza, Influencia del estilo) son exclusivos de Suno y no aplican para Mureka.</p>}
-              {!isMureka && <RangeSetting label="Rareza" help="Qué tan tradicional o creativa puede ser la canción" value={creativity} onChange={setCreativity} scrollGuard />}
-              {!isMureka && <RangeSetting label="Influencia del estilo" help="Qué tanto respetará la descripción del estilo musical" value={instruction} onChange={setInstruction} scrollGuard />}
-              {!isMureka && showAudioInfluence ? (
-                <RangeSetting label="Influencia del audio" help="Qué tanto conservará la melodía y ritmo del audio de referencia" value={audioWeight} onChange={setAudioWeight} scrollGuard />
-              ) : null}
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="settings-panel-title">
-              <h2>Ajustes de precisión</h2>
-              <button className="icon-button info-button" type="button" aria-label="Ayuda: Ajustes de precisión" onClick={openPrecisionHelp}>
-                <Info size={19} weight="bold" />
-              </button>
-            </div>
-            <p className="panel-intro">Puedes moverlos o dejarlos como están.</p>
-            {isMureka && <p className="panel-intro" style={{ opacity: 0.6 }}>Algunos parámetros (Rareza, Influencia del estilo) son exclusivos de Suno y no aplican para Mureka.</p>}
-            {!isMureka && <RangeSetting label="Rareza" help="Qué tan tradicional o creativa puede ser la canción" value={creativity} onChange={setCreativity} />}
-            {!isMureka && <RangeSetting label="Influencia del estilo" help="Qué tanto respetará la descripción del estilo musical" value={instruction} onChange={setInstruction} />}
-            {!isMureka && showAudioInfluence ? (
-              <RangeSetting label="Influencia del audio" help="Qué tanto conservará la melodía y ritmo del audio de referencia" value={audioWeight} onChange={setAudioWeight} />
-            ) : null}
-          </>
-        )}
+          </div>
+          <p className="panel-intro">Personaliza cómo se interpreta tu canción. Puedes dejar los valores como están.</p>
+          {isMureka && <p className="panel-intro" style={{ opacity: 0.6 }}>Algunos parámetros (Rareza, Influencia del estilo) son exclusivos de Suno y no aplican para Mureka.</p>}
+          {!isMureka && <RangeSetting label="Rareza" help="Qué tan tradicional o creativa puede ser la canción" value={creativity} onChange={setCreativity} scrollGuard />}
+          {!isMureka && <RangeSetting label="Influencia del estilo" help="Qué tanto respetará la descripción del estilo musical" value={instruction} onChange={setInstruction} scrollGuard />}
+          {!isMureka && showAudioInfluence ? (
+            <RangeSetting label="Influencia del audio" help="Qué tanto conservará la melodía y ritmo del audio de referencia" value={audioWeight} onChange={setAudioWeight} scrollGuard />
+          ) : null}
+        </div>
       </div>
       {needsAudioReupload ? (
         <div className="audio-lyrics-notice info" style={{ marginTop: 16 }}>
