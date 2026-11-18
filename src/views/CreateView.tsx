@@ -632,6 +632,16 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
         setVoiceRecorderError('Falló la grabación. Prueba la “Grabación alternativa”.');
       };
 
+      if (modeAtStart === 'verify') {
+        setVoiceRecorderState('idle');
+        for (let count = 3; count >= 1; count--) {
+          setVoiceRecorderError(String(count));
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 1000));
+          if (voiceRecorderStreamRef.current !== stream) return;
+        }
+        setVoiceRecorderError('¡Canta!');
+        window.setTimeout(() => setVoiceRecorderError(''), 900);
+      }
       setVoiceRecorderState('recording');
       voiceRecorderStartedAtRef.current = Date.now();
       try {
@@ -5374,7 +5384,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                           {voiceRecorderMode === 'verify' ? 'Graba la frase de validación (solo voz).' : 'Graba una muestra de tu voz (solo voz, sin música).'}
                         </div>
 
-                        {voiceRecorderError ? <div className="mt-3 text-red-300 text-sm">{voiceRecorderError}</div> : null}
+                        {voiceRecorderError ? <div className={cn("mt-3 text-center font-extrabold", /^[123]$|¡Canta!/.test(voiceRecorderError) ? "text-4xl text-emerald-300" : "text-sm text-red-300")}>{voiceRecorderError}</div> : null}
 
                         {voiceRecorderMode === 'verify' && voiceValidateInfo ? (
                           <div className="mt-4 rounded-2xl border border-white/10 bg-black/20 p-4 text-center">
@@ -5447,6 +5457,7 @@ export function CreateView({ onSongCreated, credits, openPersonaPickerSignal, on
                                 >
                                   <BadgeCheck className="w-7 h-7" />
                                 </button>
+                                {voiceRecorderMode === 'verify' ? <div className="mt-1 text-emerald-200 text-xs font-bold">Terminé de cantar</div> : null}
                               </div>
 
                               <div className="mt-2 text-slate-300 text-sm tabular-nums">
