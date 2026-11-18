@@ -643,6 +643,40 @@ function VoiceMeter({ onFinished, stream, mode = "default" }) {
   );
 }
 
+// Efecto exclusivamente visual: no interviene en la creación ni validación de la voz.
+function VoiceCloneSuccessConfetti() {
+  const pieces = useMemo(() => Array.from({ length: 92 }, (_, i) => ({
+    left: ((i * 37.73) % 100),
+    delay: ((i * 13) % 70) / 100,
+    duration: 2.4 + ((i * 7) % 17) / 10,
+    size: 5 + ((i * 11) % 8),
+    color: ["#a855f7", "#22d3ee", "#facc15", "#f472b6", "#ffffff"][i % 5],
+    rotation: (i * 47) % 360,
+  })), []);
+  return (
+    <div aria-hidden="true" style={{ position: "fixed", inset: 0, zIndex: 99999, overflow: "hidden", pointerEvents: "none" }}>
+      {pieces.map((piece, i) => (
+        <span key={i} style={{
+          position: "absolute", top: "-5%", left: piece.left + "%",
+          width: piece.size, height: piece.size * (i % 3 === 0 ? 1 : 1.7),
+          background: piece.color, borderRadius: i % 4 === 0 ? "50%" : 2,
+          opacity: 0, transform: "rotate(" + piece.rotation + "deg)",
+          animation: "lucianaVoiceConfetti " + piece.duration + "s " + piece.delay + "s ease-in forwards",
+        }} />
+      ))}
+      <style>{`@keyframes lucianaVoiceConfetti {
+        0% { transform: translate3d(0,-3vh,0) rotate(0deg); opacity: 0; }
+        10% { opacity: 1; }
+        85% { opacity: 1; }
+        100% { transform: translate3d(65px,110vh,0) rotate(800deg); opacity: 0; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        [style*="lucianaVoiceConfetti"] { animation: none !important; }
+      }`}</style>
+    </div>
+  );
+}
+
 function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
   const [wizardStep, setWizardStep] = useState(0);
   const showAlert = (input) => {
@@ -2482,6 +2516,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
 
   return (
     <div style={caja} role="dialog" aria-modal="true" aria-label="Tu voz">
+      {listo ? <VoiceCloneSuccessConfetti /> : null}
       <div style={tarjeta} data-estado={estado}>
         {titulo}
 
