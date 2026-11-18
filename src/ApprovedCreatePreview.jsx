@@ -2451,8 +2451,10 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
       <span style={{ fontSize: 22 }}>🎤</span>
       <strong style={{ fontSize: 18 }}>Tu voz</strong>
-      <button type="button" onClick={() => { try { cleanupPhraseRecording(); } catch {} try { onClose?.(); } catch {} }} aria-label="Cerrar"
-        style={{ marginLeft: "auto", background: "transparent", border: "none", color: "#94a3b8", fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
+      {estado !== "listo" ? (
+        <button type="button" onClick={() => { try { cleanupPhraseRecording(); } catch {} try { onClose?.(); } catch {} }} aria-label="Cerrar"
+          style={{ marginLeft: "auto", background: "transparent", border: "none", color: "#94a3b8", fontSize: 22, cursor: "pointer", lineHeight: 1 }}>×</button>
+      ) : null}
     </div>
   );
   const puntos = (
@@ -2529,7 +2531,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
 
         {estado === "frase" ? (
           <>
-            <strong style={{ fontSize: 17 }}>Repite esta frase:</strong>
+            <strong style={{ fontSize: 17 }}>Canta esta frase:</strong>
             <div style={{
               padding: "20px 20px", borderRadius: 16, background: "rgba(34,211,238,.08)",
               border: "1px solid rgba(34,211,238,.45)", fontSize: 23, lineHeight: 1.45, fontStyle: "italic",
@@ -2538,7 +2540,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
               “{frase || "Preparando tu frase…"}”
             </div>
             <p style={{ margin: 0, color: "#c3cbd8", fontSize: 15, lineHeight: 1.5 }}>
-              Dilo con tu voz normal, como si me lo platicaras. No hace falta cantarlo.
+              Cántalo en un lugar sin eco.
             </p>
             {!micOk ? (
               <div style={{ padding: "12px 14px", borderRadius: 12, background: "rgba(168,85,247,.12)", border: "1px solid rgba(168,85,247,.4)" }}>
@@ -2585,7 +2587,9 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
             <p style={{ margin: 0, textAlign: "center", color: "#93a1b5", fontSize: 12 }}>
               {phraseRecording.seconds}s
             </p>
-            <button type="button" style={botonSecundario} onClick={() => { stopPhraseRecording(); }}>Detener ahora</button>
+            <button type="button" style={botonGrande} onClick={() => { stopPhraseRecording(); }}>
+              Terminé de cantar
+            </button>
           </>
         ) : null}
 
@@ -2602,16 +2606,37 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         {estado === "listo" ? (
           <>
             <div style={{ textAlign: "center", fontSize: 40 }}>✅</div>
-            <strong style={{ textAlign: "center", fontSize: 17 }}>Tu voz está lista</strong>
+            <strong style={{ textAlign: "center", fontSize: 18 }}>Tu voz está lista</strong>
             {sourcePlayerSrc ? (
               <audio controls src={sourcePlayerSrc} style={{ width: "100%" }} />
             ) : null}
+            <label style={{ fontSize: 13, color: "#c3cbd8" }}>
+              Ponle nombre a tu voz
+              <input
+                type="text"
+                value={profile.name || ""}
+                placeholder="Mi voz"
+                onChange={(e) => setProfile((current) => ({ ...current, name: e.target.value.slice(0, 40) }))}
+                style={{ width: "100%", marginTop: 6, padding: "12px 14px", borderRadius: 12, border: "1px solid rgba(255,255,255,.18)", background: "rgba(255,255,255,.06)", color: "#e8ecf5", fontSize: 15 }}
+              />
+            </label>
             <button
               type="button"
               style={botonGrande}
               onClick={async () => {
+                const nombre = (profile.name || "Mi voz").trim() || "Mi voz";
                 try { await saveToSunoVoices(); } catch {}
-                try { onComplete({ name: profile.name || "Mi voz", style: "Pop", level: "beginner", voiceId: voiceGen.voiceId }); } catch {}
+                try {
+                  if (typeof window !== "undefined") {
+                    window.localStorage.setItem("ramber.vozLista_v1", JSON.stringify({
+                      name: nombre, voiceId: voiceGen.voiceId, audioUrl: sourceUpload.url || "",
+                    }));
+                  }
+                } catch {}
+                try { onComplete({ name: nombre, style: "Pop", level: "beginner", voiceId: voiceGen.voiceId }); } catch {}
+                try {
+                  if (typeof window !== "undefined") window.location.href = "/crear";
+                } catch {}
               }}
             >
               Hacer mi canción
@@ -5533,6 +5558,25 @@ function ApprovedCreateContent(props) {
     setCreditsGate(null);
   }, [safeUserId]);
 
+  // Si viene del clonador, se usa esa voz y se salta directo a la letra.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const raw = window.localStorage.getItem('ramber.vozLista_v1');
+      if (!raw) return;
+      window.localStorage.removeItem('ramber.vozLista_v1');
+      const v = JSON.parse(raw);
+      if (!v || typeof v !== 'object') return;
+      setData((current) => ({
+        ...current,
+        voice: 'clone',
+        voiceProfile: v.voiceId ? { voiceId: v.voiceId, name: v.name || 'Mi voz', source: 'suno' } : current.voiceProfile,
+        model: 'Suno V6',
+      }));
+      setStep(1);
+      setToast('Tu voz "' + (v.name || 'Mi voz') + '" está lista. Ahora escribe la letra.');
+    } catch {}
+  }, []);
   const applyDraftPayload = (parsed) => {
     if (!parsed || typeof parsed !== 'object') return;
     // Siempre se empieza en el paso 1 (Inicio), aunque el borrador guardara otro paso.
