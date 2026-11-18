@@ -6549,7 +6549,6 @@ function ApprovedCreateContent(props) {
         ];
         const inferredGenre = genrePhrases.find((g) => mergedLower.includes(g)) || '';
         const baseStyle = data.style.toString().trim();
-        const hasJazzMention = mergedLower.includes('jazz');
         let finalStyle = baseStyle;
         if (!finalStyle) {
           finalStyle = inferredGenre ? `Género: ${inferredGenre}` : 'General';
@@ -6564,9 +6563,6 @@ function ApprovedCreateContent(props) {
         payload.weirdnessConstraint = creativity / 100;
         payload.styleWeight = instruction / 100;
         if (hasAudioCover) payload.audioWeight = audioWeight / 100;
-        if (inferredGenre && !hasJazzMention) {
-          payload.negativeTags = 'jazz, swing, bebop, saxophone';
-        }
         if (data.negative && data.negative.trim()) {
           payload.negativeTags = [payload.negativeTags, data.negative.trim()].filter(Boolean).join(', ');
         }
