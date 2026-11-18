@@ -1025,6 +1025,16 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     }
   };
 
+  const formatearDuracion = (segundos) => {
+    const total = Math.max(0, Math.round(Number(segundos) || 0));
+    const m = Math.floor(total / 60);
+    const ss = total % 60;
+    if (m <= 0) return total + " segundos";
+    return m + ":" + String(ss).padStart(2, "0") + " minutos";
+  };
+  const MINIMO_SEGUNDOS = 20;
+  const MAXIMO_SEGUNDOS = 360;
+
   const applySourceAudioFile = (file) => {
     if (!file) return;
     let objectUrl = "";
@@ -1039,6 +1049,16 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       "loadedmetadata",
       () => {
         const duration = Math.max(1, Math.floor(audio.duration));
+        if (duration < MINIMO_SEGUNDOS) {
+          setSaveError("Tu grabación dura " + formatearDuracion(duration) + ". Necesitamos al menos 20 segundos para reconocer tu voz.");
+          try { URL.revokeObjectURL(objectUrl); } catch {}
+          return;
+        }
+        if (duration > MAXIMO_SEGUNDOS) {
+          setSaveError("Tu grabación dura " + formatearDuracion(duration) + ". El máximo es 6 minutos.");
+          try { URL.revokeObjectURL(objectUrl); } catch {}
+          return;
+        }
         setProfile((current) => ({
           ...current,
           sourceAudio: file,
@@ -2336,6 +2356,9 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
   const mensajeAmable = (() => {
     const t = errorCrudo.toLowerCase();
     if (!t) return "";
+    if (t.includes("voices sound different") || t.includes("sound different") || t.includes("different voice")) {
+      return "No se escuchó bien tu voz. Asegúrate de que no haya música ni otras personas cantando en la grabación.";
+    }
     if (t.includes("didn't sound like") || t.includes("did not sound like") || t.includes("sound like you")) {
       return "No se escuchó bien. Acércate al micrófono, sin ruido de fondo, y repite la frase completa.";
     }
@@ -2414,21 +2437,24 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         {estado === "inicio" ? (
           <>
             <p style={{ margin: 0, color: "#c7d0dd", lineHeight: 1.5 }}>
-              Sube <strong>30 segundos cantando</strong> o grábate ahora.
+              Sube tu <strong>canción completa cantada por ti</strong>, sin música.
             </p>
             <label style={{
               display: "block", padding: "26px 16px", borderRadius: 16, textAlign: "center", cursor: "pointer",
               border: "2px dashed rgba(168,85,247,.55)", background: "rgba(168,85,247,.07)",
             }}>
               <div style={{ fontSize: 30, marginBottom: 6 }}>📁</div>
-              <strong style={{ display: "block", fontSize: 14 }}>Arrastra tu audio</strong>
+              <strong style={{ display: "block", fontSize: 15 }}>Arrastra tu audio</strong>
               <span style={{ fontSize: 12, color: "#93a1b5" }}>o haz clic para buscarlo</span>
+              <span style={{ display: "block", marginTop: 10, fontSize: 12, color: "#8b95a6", lineHeight: 1.5 }}>
+                Solo tu voz, sin instrumental ni otras personas. Este mismo audio se usa para tu cover, así no grabas dos veces.
+              </span>
               <input type="file" accept="audio/*" style={{ display: "none" }}
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) applySourceAudioFile(f); }} />
             </label>
-            <div style={{ textAlign: "center", color: "#7c8798", fontSize: 12 }}>o</div>
+            <div style={{ textAlign: "center", color: "#6b7686", fontSize: 11, marginTop: 6 }}>o, si no tienes el archivo a mano</div>
             <button type="button" style={botonSecundario} onClick={() => { startSourceRecording().catch(() => {}); }}>
-              🎙️ Grabar ahora
+              🎙️ grábate ahora
             </button>
             {sourceRecording.recording ? (
               <div style={{ textAlign: "center", color: "#fca5a5", fontSize: 13 }}>
@@ -2460,6 +2486,9 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
             </div>
             <p style={{ margin: 0, color: "#93a1b5", fontSize: 13, lineHeight: 1.5 }}>
               Dilo con tu voz normal, como si me lo platicaras. No hace falta cantarlo.
+            </p>
+            <p style={{ margin: 0, color: "#7f8a9b", fontSize: 11.5 }}>
+              Usaremos el audio que ya subiste para tu canción.
             </p>
             {!avisoFraseOk ? (
               <button type="button" style={botonGrande} onClick={() => { setAvisoFraseOk(true); setAvisoFrase(true); }}>
