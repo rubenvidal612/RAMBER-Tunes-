@@ -3208,6 +3208,19 @@ const sunoHandler = (() => {
     }
   }
 
+  // Traduce el error del proveedor de separación a algo entendible.
+  function separacionMensaje(raw: string) {
+    const t = String(raw || "").toLowerCase();
+    if (!t) return "No se pudo separar la voz. Intenta de nuevo en un momento.";
+    if (/not supported|unsupported|invalid audio|audio not found|no such audio|not exist/.test(t)) {
+      return "Esta canción no se puede separar. La separación de voz funciona con canciones hechas con Suno (no con audios subidos ni con LucIAna V1).";
+    }
+    if (/rate|limit|too many|busy|occupied/.test(t)) return "El servicio está ocupado ahora mismo. Espera un momento e intenta de nuevo.";
+    if (/already exists|record already/.test(t)) return "Esta canción ya tenía una separación en proceso. Espera a que termine.";
+    if (/expired|expir/i.test(t)) return "La canción es muy vieja para separarla. Solo funciona con canciones recientes.";
+    return "No se pudo separar la voz. Intenta de nuevo en un momento.";
+  }
+
   async function handleSeparate(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -3418,11 +3431,11 @@ const sunoHandler = (() => {
             return send(res, 200, { taskId: retry.taskId, retried: true });
           }
           if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
-          return send(res, 502, { error: "Error separando", code: r.status, detail: msgText });
+          return send(res, 502, { error: separacionMensaje(msgText), code: r.status, detail: separacionMensaje(msgText), provider_detail: msgText });
         } else if (!isAdmin) {
           await adjustUserCredits(auth.admin, user.id, cost);
         }
-        return send(res, 502, { error: "Error separando", code: r.status, detail: msgText });
+        return send(res, 502, { error: separacionMensaje(msgText), code: r.status, detail: separacionMensaje(msgText), provider_detail: msgText });
       }
 
       const code = Number(data?.code);

@@ -4631,6 +4631,19 @@ function StyleStep({ data, setData, creativity, setCreativity, instruction, setI
           {!isMureka && showAudioInfluence ? (
             <RangeSetting label="Influencia del audio" help="Qué tanto conservará la melodía y ritmo del audio de referencia" value={audioWeight} onChange={setAudioWeight} scrollGuard />
           ) : null}
+          <button
+            type="button"
+            className="translate-button"
+            style={{ marginTop: 10 }}
+            onClick={() => {
+              setCreativity(50);
+              setInstruction(50);
+              setAudioWeight(25);
+              setToast('Ajustes restablecidos a como estaban.');
+            }}
+          >
+            ⟲ Volver a como estaba
+          </button>
         </div>
       </div>
       {needsAudioReupload ? (

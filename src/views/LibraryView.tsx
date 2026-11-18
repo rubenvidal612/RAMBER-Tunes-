@@ -5708,6 +5708,14 @@ function SongOptionsSheet({
         alert('Esta canción no tiene información para separar (taskId/audioId). Si es una canción subida o muy vieja, no se puede separar.');
         return;
       }
+      // Las canciones de LucIAna V1 (proveedor treblo) no existen en Suno: no se pueden separar.
+      const esLuciana = String((song as any).provider || '').toLowerCase() === 'treblo'
+        || String(song.sunoTaskId || '').startsWith('treblo:')
+        || String(song.sunoAudioId || '').startsWith('treblo-');
+      if (esLuciana) {
+        alert('Esta canción se creó con LucIAna V1. La separación de voz solo funciona con canciones hechas con Suno.');
+        return;
+      }
 
       const start = await fetch('/api/suno/separate', {
         method: 'POST',
