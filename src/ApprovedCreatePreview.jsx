@@ -2466,7 +2466,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
   const estado = (() => {
     if (listo) return "listo";
     if (saving || voiceGen.loading) return "creando";
-    if (phraseRecording.recording) return "grabando";
+    if (phraseRecording.recording || phraseCountdown.active) return "grabando";
     if (validation.phrase && verificationReady) return "frase";
     if (validation.phrase && !verificationReady) return "frase";
     if (validation.loading || sourceUpload.loading || phraseCountdown.active) return "preparando";
@@ -2632,11 +2632,13 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
               medidor
             )}
             <p style={{ margin: 0, textAlign: "center", color: "#93a1b5", fontSize: 15 }}>
-              {phraseRecording.seconds}s
+              {phraseRecording.recording ? phraseRecording.seconds + "s" : "Prepárate…"}
             </p>
-            <button type="button" style={botonGrande} onClick={() => { stopPhraseRecording(); }}>
-              Terminé de cantar
-            </button>
+            {phraseRecording.recording ? (
+              <button type="button" style={botonGrande} onClick={() => { stopPhraseRecording(); }}>
+                Terminé de cantar
+              </button>
+            ) : null}
           </>
         ) : null}
 
@@ -4483,6 +4485,8 @@ function LyricsStep({ data, setData, setToast, handlers }) {
 function StyleStep({ data, setData, creativity, setCreativity, instruction, setInstruction, audioWeight, setAudioWeight, setToast, handlers }) {
   const [modelOpen, setModelOpen] = useState(false);
   const [precisionOpen, setPrecisionOpen] = useState(false);
+  // En móvil los ajustes avanzados se muestran plegados.
+  const isMobileLayout = useMediaQuery('(max-width: 900px)');
   const improving = Boolean(handlers?.isBoostingStyle);
   const translating = Boolean(handlers?.isTranslatingStyle);
   const showAudioInfluence = data.audioSource === 'upload' && (Boolean(data.file) || Boolean(handlers?.audioUploadUrl) || Boolean(handlers?.isUploadingAudio) || Boolean(handlers?.audioUploadError));
