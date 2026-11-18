@@ -2356,6 +2356,12 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
   const mensajeAmable = (() => {
     const t = errorCrudo.toLowerCase();
     if (!t) return "";
+    if (t.includes("internal error") || t.includes("please try again") || t.includes("unexpected error") || t.includes("something went wrong")) {
+      return "El servicio de voz falló por un momento. Espera unos segundos y vuelve a intentarlo.";
+    }
+    if (t.includes("invalid") && t.includes("audio")) {
+      return "No pudimos leer tu audio. Prueba con otro archivo (MP3 o WAV) o vuelve a subirlo.";
+    }
     if (t.includes("voices sound different") || t.includes("sound different") || t.includes("different voice")) {
       return "No se escuchó bien tu voz. Asegúrate de que no haya música ni otras personas cantando en la grabación.";
     }
@@ -2511,13 +2517,19 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
 
         {estado === "grabando" ? (
           <>
+            <div style={{
+              padding: "12px 14px", borderRadius: 12, background: "rgba(34,211,238,.08)",
+              border: "1px solid rgba(34,211,238,.35)", fontSize: 15, lineHeight: 1.5, fontStyle: "italic",
+            }}>
+              “{frase || "Preparando tu frase…"}”
+            </div>
+            <p style={{ margin: 0, color: "#93a1b5", fontSize: 12, textAlign: "center" }}>
+              Dilo completo y claro. Se detiene solo.
+            </p>
             {phraseCountdown.active ? (
               <strong style={{ textAlign: "center", fontSize: 44, color: "#22d3ee" }}>{phraseCountdown.step || "3"}</strong>
             ) : null}
             {medidor}
-            <p style={{ margin: 0, textAlign: "center", color: "#93a1b5", fontSize: 13 }}>
-              Dilo completo y claro. Se detiene solo.
-            </p>
             <button type="button" style={botonSecundario} onClick={() => { stopPhraseRecording(); }}>Detener ahora</button>
           </>
         ) : null}
