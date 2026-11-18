@@ -19,3 +19,34 @@ body{background:#07070a}
 @media(max-width:1200px){.header{height:72px}.main-area{padding-bottom:78px}.step-footer{bottom:72px}.mobile-bottom-nav{position:fixed;z-index:80;left:0;right:0;bottom:0;height:72px;background:rgba(9,9,12,.96);border-top:1px solid #2a2a31;display:grid;grid-template-columns:repeat(4,1fr);backdrop-filter:blur(16px)}.mobile-bottom-nav button{border:0;background:transparent;color:#85858f;display:grid;place-items:center;align-content:center;gap:4px;font-size:11px;cursor:pointer}.mobile-bottom-nav button.active{color:#b46ef6}.sidebar{padding-bottom:92px}.page-area .content-area{padding-bottom:110px}.song-cover-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.header .menu-button{display:none}.header{padding:0 14px}.brand{font-size:18px}.credits{padding:6px 12px;min-height:44px}.credits span{font-size:14px}.project-cover{grid-template-columns:96px 1fr;padding:10px}.project-cover img{width:96px;height:96px}.project-cover strong{font-size:18px}.song-cover-grid{grid-template-columns:1fr 1fr;gap:12px}.cover-info{grid-template-columns:1fr auto}.cover-info em{display:none}.cover-info .row-action{display:none}.landing-placeholder{min-height:360px;padding:26px}.landing-placeholder h2{font-size:24px}.step-footer{bottom:72px}}
 
+
+
+/* Ajustes avanzados: misma paleta oscura y morada de LucIAna Music. */
+.precision-toggle{
+  background:linear-gradient(145deg,#121218,#0d0d12);
+  border:1px solid #292932;
+  border-radius:16px;
+  padding:15px 17px;
+  transition:border-color .18s ease,background .18s ease;
+}
+.precision-toggle:hover,.precision-toggle[aria-expanded="true"]{border-color:#9a59ed}
+.precision-toggle:focus-visible{outline:2px solid #9a59ed;outline-offset:3px}
+.precision-toggle-text{color:#f2edf8;font-size:16px;line-height:1.4}
+.precision-toggle-icon{color:#9a59ed}
+.precision-collapsible-body{
+  background:#111116;
+  border:1px solid #292932;
+  border-radius:16px;
+  padding:18px;
+  margin-top:10px;
+}
+.precision-collapsible-body[hidden]{display:none}
+.precision-help-title{color:#f2edf8;font-size:16px}
+.precision-collapsible-body .panel-intro{color:#9b9ba6;margin:8px 0 18px;line-height:1.5}
+.precision-collapsible-body .range-setting{border-top-color:#292932;padding:16px 0}
+.precision-collapsible-body .range-heading p{color:#9b9ba6}
+@media(max-width:700px){
+  .precision-toggle{min-height:54px;padding:13px 14px}
+  .precision-collapsible-body{padding:14px}
+  .precision-toggle-text{font-size:15px}
+}
