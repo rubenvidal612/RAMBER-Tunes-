@@ -2478,6 +2478,9 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
             <p style={{ margin: 0, textAlign: "center", color: "#93a1b5", fontSize: 13, lineHeight: 1.5 }}>
               Ya casi. No cierres esta pantalla.
             </p>
+            <p style={{ margin: 0, textAlign: "center", color: "#7f8a9b", fontSize: 12, lineHeight: 1.5 }}>
+              Enseguida saldrá una frase corta: cántala suave, <strong>en el mismo tono de tu audio</strong>.
+            </p>
           </>
         ) : null}
 
@@ -2496,19 +2499,13 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
             <p style={{ margin: 0, color: "#7f8a9b", fontSize: 11.5 }}>
               Usaremos el audio que ya subiste para tu canción.
             </p>
-            {!avisoFraseOk ? (
-              <button type="button" style={botonGrande} onClick={() => { setAvisoFraseOk(true); setAvisoFrase(true); }}>
-                Acepto y grabo
-              </button>
-            ) : (
-              <button
-                type="button"
-                style={{ ...botonGrande, borderRadius: 999, padding: "22px 18px", fontSize: 17 }}
-                onClick={() => { startPhraseRecording().catch(() => {}); }}
-              >
-                ● GRABAR
-              </button>
-            )}
+            <button
+              type="button"
+              style={{ ...botonGrande, borderRadius: 999, padding: "22px 18px", fontSize: 17 }}
+              onClick={() => { setAvisoFraseOk(true); setAvisoFrase(true); startPhraseRecording().catch(() => {}); }}
+            >
+              ● GRABAR
+            </button>
             <button type="button" style={botonSecundario} onClick={() => { handleRegeneratePhrase().catch(() => {}); }} disabled={regenPhraseBusy}>
               {regenPhraseBusy ? "Cambiando frase…" : "Otra frase"}
             </button>
@@ -2529,7 +2526,14 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
             {phraseCountdown.active ? (
               <strong style={{ textAlign: "center", fontSize: 44, color: "#22d3ee" }}>{phraseCountdown.step || "3"}</strong>
             ) : null}
-            {medidor}
+            {phraseMeterStream ? (
+              <VoiceMeter onFinished={() => {}} stream={phraseMeterStream} />
+            ) : (
+              medidor
+            )}
+            <p style={{ margin: 0, textAlign: "center", color: "#93a1b5", fontSize: 12 }}>
+              {phraseRecording.seconds}s
+            </p>
             <button type="button" style={botonSecundario} onClick={() => { stopPhraseRecording(); }}>Detener ahora</button>
           </>
         ) : null}
