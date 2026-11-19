@@ -5663,63 +5663,35 @@ function ApprovedCreateContent(props) {
 
   useEffect(() => {
     if (!draftKey) return;
-    // Si acabamos de llegar del clonador, NO restaurar el borrador viejo:
-    // el usuario debe ver su voz nueva y el audio original, no una canción anterior.
+    // Si acabamos de llegar del clonador, NO restaurar el borrador viejo.
     if (bridgeAppliedRef.current) return;
     try {
-      let raw = window.localStorage.getItem(draftKey);
-      if (!raw && legacyDraftKey && legacyDraftKey !== draftKey) {
-        // Migración: el formato anterior guardaba un solo borrador por usuario.
-        // La primera ventana que abra la app lo adopta, para no perder la canción en curso.
-        try {
-          const legacyRaw = window.localStorage.getItem(legacyDraftKey);
-          if (legacyRaw) {
-            raw = legacyRaw;
-            window.localStorage.setItem(draftKey, legacyRaw);
-            window.localStorage.removeItem(legacyDraftKey);
-          }
-        } catch {}
+      const prefijo = 'ramber.approved_create_draft_v1.uid_' + safeUserId;
+      const ahora = Date.now();
+      const MAX_EDAD = 48 * 60 * 60 * 1000; // 48 h: más viejo se considera basura
+      const claves = new Set();
+      if (draftKey) claves.add(draftKey);
+      if (legacyDraftKey) claves.add(legacyDraftKey);
+      if (latestDraftKey) claves.add(latestDraftKey);
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i) || '';
+        if (k.indexOf(prefijo) === 0) claves.add(k);
       }
-      // Respaldo "último borrador": se usa si no hay borrador de esta ventana
-      // o si el respaldo es MÁS NUEVO que el de la ventana (antes se restauraba
-      // una canción vieja aunque hubiera una más reciente).
-      if (latestDraftKey) {
+      let mejorRaw = null;
+      let mejorFecha = 0;
+      claves.forEach((k) => {
         try {
-          const mirrorRaw = window.localStorage.getItem(latestDraftKey);
-          if (mirrorRaw) {
-            const mirror = JSON.parse(mirrorRaw);
-            const age = Date.now() - Number(mirror?.savedAt || 0);
-            const vigente = age >= 0 && age < 24 * 60 * 60 * 1000;
-            if (vigente) {
-              let actual = 0;
-              try {
-                const parsedRaw = raw ? JSON.parse(raw) : null;
-                actual = Number(parsedRaw?.savedAt || 0);
-              } catch {}
-              if (!raw || Number(mirror?.savedAt || 0) > actual) raw = mirrorRaw;
-            }
-          }
+          const valor = window.localStorage.getItem(k);
+          if (!valor) return;
+          const obj = JSON.parse(valor);
+          const t = Number(obj?.savedAt || 0);
+          // Sin fecha válida = borrador viejo/incompleto: no se restaura.
+          if (!(t > 0)) return;
+          if (ahora - t > MAX_EDAD) return;
+          if (t > mejorFecha) { mejorFecha = t; mejorRaw = valor; }
         } catch {}
-      }
-      // Se comparan TODOS los borradores del usuario y gana el más reciente.
-      try {
-        const prefijo = 'ramber.approved_create_draft_v1.uid_' + safeUserId;
-        const ahora = Date.now();
-        let mejor = 0;
-        try { mejor = Number(JSON.parse(raw || 'null')?.savedAt || 0); } catch {}
-        for (let i = 0; i < window.localStorage.length; i++) {
-          const k = window.localStorage.key(i) || '';
-          if (k.indexOf(prefijo) !== 0) continue;
-          try {
-            const valor = window.localStorage.getItem(k);
-            const obj = valor ? JSON.parse(valor) : null;
-            const t = Number(obj?.savedAt || 0);
-            const vigente = t > 0 && ahora - t < 24 * 60 * 60 * 1000;
-            if (vigente && t > mejor) { mejor = t; raw = valor; }
-          } catch {}
-        }
-      } catch {}
-      const parsed = raw ? JSON.parse(raw) : null;
+      });
+      const parsed = mejorRaw ? JSON.parse(mejorRaw) : null;
       applyDraftPayload(parsed);
     } catch {}
   }, [draftKey, legacyDraftKey]);
