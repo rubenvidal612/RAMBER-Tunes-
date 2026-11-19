@@ -3050,21 +3050,13 @@ function StartStep({ data, setData, setToast, handlers }) {
   };
 
   const openClonePicker = () => {
-    // Clonar voz pide al menos una recarga de cualquier paquete.
-    if (!handlers?.hasPaid) {
-      setCloneGateOpen(true);
-      return;
-    }
+    // La prueba incluye clonar la voz: no se exige recarga.
     previousVoiceRef.current = { voice: data.voice, model: data.model, voiceProfile: data.voiceProfile };
     setData((current) => ({ ...current, voice: 'clone', voiceProfile: null, model: current.model === 'LucIAna V1' ? 'Suno V6' : current.model }));
     setClonePickerOpen(true);
   };
 
   const goCreatePersona = () => {
-    if (!handlers?.hasPaid) {
-      setCloneGateOpen(true);
-      return;
-    }
     try {
       window.localStorage.setItem(returnToCreateVoicePickerKey, '1');
     } catch {}
@@ -6982,7 +6974,7 @@ export function ApprovedCloneVoicePreview({ onClose, hasPaid = null }) {
   return (
     <div style={{ height: "100%", minHeight: 0, width: "100%" }}>
       <style>{approvedCloneCss}</style>
-      {hasPaid === false ? (
+      {false ? (
         <CloneNeedsRecharge onClose={onClose} variant="page" />
       ) : (
         <ApprovedCloneVoiceContent onClose={onClose} />
