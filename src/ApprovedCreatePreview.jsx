@@ -5701,6 +5701,24 @@ function ApprovedCreateContent(props) {
           }
         } catch {}
       }
+      // Se comparan TODOS los borradores del usuario y gana el más reciente.
+      try {
+        const prefijo = 'ramber.approved_create_draft_v1.uid_' + safeUserId;
+        const ahora = Date.now();
+        let mejor = 0;
+        try { mejor = Number(JSON.parse(raw || 'null')?.savedAt || 0); } catch {}
+        for (let i = 0; i < window.localStorage.length; i++) {
+          const k = window.localStorage.key(i) || '';
+          if (k.indexOf(prefijo) !== 0) continue;
+          try {
+            const valor = window.localStorage.getItem(k);
+            const obj = valor ? JSON.parse(valor) : null;
+            const t = Number(obj?.savedAt || 0);
+            const vigente = t > 0 && ahora - t < 24 * 60 * 60 * 1000;
+            if (vigente && t > mejor) { mejor = t; raw = valor; }
+          } catch {}
+        }
+      } catch {}
       const parsed = raw ? JSON.parse(raw) : null;
       applyDraftPayload(parsed);
     } catch {}
