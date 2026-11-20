@@ -1568,6 +1568,33 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     return null;
   };
 
+  // Suno falla de forma intermitente ("Internal Error"). Se reintenta solo, sin molestar.
+  const esErrorTemporal = (texto) =>
+    /internal error|please try again|try again later|unexpected error|something went wrong|timeout|timed out/i.test(String(texto || ""));
+
+  const postConReintento = async (url, body, token, intentos = 3) => {
+    let ultimo = null;
+    for (let i = 0; i < intentos; i++) {
+      try {
+        const r = await fetch(url, {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: "Bearer " + token },
+          body: JSON.stringify(body),
+        });
+        const out = await r.json().catch(() => ({}));
+        ultimo = { r, out };
+        if (r.ok) return ultimo;
+        const texto = String((out && (out.detail?.msg || out.detail || out.error)) || "");
+        if (!esErrorTemporal(texto) || i === intentos - 1) return ultimo;
+      } catch (e) {
+        ultimo = { r: { ok: false, status: 0 }, out: { error: e instanceof Error ? e.message : String(e) } };
+        if (i === intentos - 1) return ultimo;
+      }
+      await new Promise((r2) => setTimeout(r2, 1200 + i * 900));
+    }
+    return ultimo;
+  };
+
   const startValidate = async () => {
     const existingClientAttemptId = String(validation.clientAttemptId || "").trim();
     if (validateLockRef.current.running) return false;
@@ -1613,12 +1640,11 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       }
       const vocalStartS = Math.max(0, Math.floor(Number(profile.start) || 0));
       const vocalEndS = Math.max(0, Math.floor(Number(profile.end) || 0));
-      const r = await fetch("/api/suno/voice-validate", {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ voiceUrl, vocalStartS, vocalEndS, language, clientAttemptId }),
-      });
-      const out = await r.json().catch(() => ({}));
+      const { r, out } = await postConReintento(
+        "/api/suno/voice-validate",
+        { voiceUrl, vocalStartS, vocalEndS, language, clientAttemptId },
+        t.token,
+      );
       if (!r.ok) {
         const msg = String(out?.detail?.msg || out?.detail || out?.error || "No se pudo iniciar la validación de voz.").trim();
         setValidation((current) =>
@@ -1950,12 +1976,11 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
       }
       const vocalStartS = Math.max(0, Math.floor(Number(profile.start) || 0));
       const vocalEndS = Math.max(0, Math.floor(Number(profile.end) || 0));
-      const r = await fetch("/api/suno/voice-validate", {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
-        body: JSON.stringify({ voiceUrl, vocalStartS, vocalEndS, language, clientAttemptId }),
-      });
-      const out = await r.json().catch(() => ({}));
+      const { r, out } = await postConReintento(
+        "/api/suno/voice-validate",
+        { voiceUrl, vocalStartS, vocalEndS, language, clientAttemptId },
+        t.token,
+      );
       if (!r.ok) {
         const raw = String(out?.detail?.msg || out?.detail || out?.error || "").trim();
         const msg = isTemporaryErrorMessage(raw)
@@ -2159,12 +2184,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         singerSkillLevel: profile.level,
         clientAttemptId: String(validation.clientAttemptId || "").trim() || undefined,
       };
-      const r = await fetch("/api/suno/voice-generate", {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
-        body: JSON.stringify(body),
-      });
-      const out = await r.json().catch(() => ({}));
+      const { r, out } = await postConReintento("/api/suno/voice-generate", body, t.token);
       if (!r.ok) {
         const raw = String(out?.detail || out?.error || "No se pudo iniciar la creación de voz.").trim();
         const looksInvalidStatus = /validate record is not in valid status/i.test(raw);
