@@ -4890,12 +4890,30 @@ const sunoHandler = (() => {
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
+        await guardarErrorValidacion(auth, res, "gen-" + String(validationTaskId || ""), {
+          stage: "voice-generate-http",
+          status: r.status,
+          msg: String(msg).slice(0, 1200),
+          rawText: String(text || "").slice(0, 2000),
+          rawJson: JSON.stringify(data || null).slice(0, 2000),
+          verifyUrl,
+          validationTaskId,
+        });
         return send(res, 502, { error: "Error creando voz personalizada", code: r.status, detail: String(msg).slice(0, 1200) });
       }
 
       const code = Number(data?.code);
       if (code && code !== 200) {
         const msg = sunoErrorMessage(data, "Error del proveedor");
+        await guardarErrorValidacion(auth, res, "gen-" + String(validationTaskId || ""), {
+          stage: "voice-generate-code",
+          code,
+          msg: String(msg).slice(0, 1200),
+          rawText: String(text || "").slice(0, 2000),
+          rawJson: JSON.stringify(data || null).slice(0, 2000),
+          verifyUrl,
+          validationTaskId,
+        });
         return send(res, 502, { error: "Error creando voz personalizada", code, detail: String(msg).slice(0, 1200) });
       }
 

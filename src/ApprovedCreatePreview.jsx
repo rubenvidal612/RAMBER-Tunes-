@@ -2456,7 +2456,9 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     const t = errorCrudo.toLowerCase();
     if (!t) return "";
     if (t.includes("internal error") || t.includes("please try again") || t.includes("unexpected error") || t.includes("something went wrong")) {
-      return "Suno no pudo procesar el audio (falló por un momento). Intenta de nuevo; si sigue igual, sube un audio más limpio, sin música de fondo.";
+      // Se muestra también el texto del proveedor para saber la causa real.
+      const detalle = errorCrudo.replace(/\s+/g, " ").slice(0, 180);
+      return "Suno no pudo procesar el audio. Detalle del proveedor: " + detalle;
     }
     if (t.includes("invalid") && t.includes("audio")) {
       return "No pudimos leer tu audio. Prueba con otro archivo (MP3 o WAV) o vuelve a subirlo.";
