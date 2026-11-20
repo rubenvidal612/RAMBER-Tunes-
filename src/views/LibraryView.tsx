@@ -5619,13 +5619,10 @@ function SongOptionsSheet({
         alert('No recibí taskId del video.');
         return;
       }
-      toastDownloadSoon();
+      onToast?.('Tu video se está creando. Tarda unos 3 minutos; lo verás en la pestaña Video.');
       try {
         await navigator.clipboard.writeText(mp4TaskId);
-        alert(`Listo. El video se está generando en la pestaña "Video".\n\nTaskId (copiado):\n${mp4TaskId}`);
-      } catch {
-        alert(`Listo. El video se está generando en la pestaña "Video".\n\nTaskId:\n${mp4TaskId}`);
-      }
+      } catch {}
 
       onOpenVideos?.();
       setIsBusy(false); // Release UI lock while polling in background
@@ -5649,7 +5646,7 @@ function SongOptionsSheet({
         ).toUpperCase();
 
         if (status === 'FAILED' || status === 'CREATE_TASK_FAILED' || status === 'GENERATE_MP4_FAILED' || status === 'CALLBACK_EXCEPTION') {
-          alert('No se pudo generar el video.');
+          onToast?.('No se pudo generar el video. Intenta de nuevo en unos minutos.');
           return;
         }
         if (status !== 'SUCCESS') continue;
@@ -5663,16 +5660,17 @@ function SongOptionsSheet({
         ).trim();
 
         if (!videoUrl) {
-          alert('El video terminó, pero no recibí el link.');
+          onToast?.('El video terminó, pero no se recibió el enlace.');
           return;
         }
+        onToast?.('¡Tu video está listo! Se abre en una pestaña nueva.');
         window.open(videoUrl, '_blank');
         return;
       }
 
-      alert('El video está tardando, pero se sigue generando en la pestaña "Video".');
+      onToast?.('Tu video sigue creándose (tarda unos 3 a 5 minutos). Estará en la pestaña Video.');
     } catch (e) {
-      alert('Error: ' + (e instanceof Error ? e.message : 'Desconocido'));
+      onToast?.('Error creando el video: ' + (e instanceof Error ? e.message : 'desconocido'));
     } finally {
       setIsBusy(false);
     }
