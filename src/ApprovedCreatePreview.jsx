@@ -1778,9 +1778,11 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     setVoiceGen((current) => ({ ...current, loading: false, error: "La voz está tardando demasiado. Intenta más tarde." }));
   };
 
+  const motivoNoDisponibleRef = useRef('');
   const checkAvailability = async (taskId) => {
     const t = await getAccessToken();
     if (!t.ok) return null;
+    motivoNoDisponibleRef.current = '';
     const startedAt = Date.now();
     while (Date.now() - startedAt < 3 * 60 * 1000) {
       const r = await fetch("/api/suno/voice-check-voice", {
@@ -1793,6 +1795,8 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         if (out?.status === 'expired' || out?.status === 'failed') throw new Error(out?.reason || 'Suno rechazó esta voz. Repite la validación.');
         const available = isVoiceAvailable(out?.isAvailable);
         if (available) return true;
+        const motivo = String(out?.reason || out?.errorMessage || '').trim();
+        if (motivo) motivoNoDisponibleRef.current = motivo;
       }
       await new Promise((r2) => setTimeout(r2, 2500));
     }
@@ -1850,7 +1854,12 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     if (normalizeStatus(status) === "success" && voiceId) {
       const taskId = String(out?.taskId || validationTaskId).trim();
       const available = await checkAvailability(taskId);
-      if (!available) return false;
+      if (!available) {
+        const motivo = motivoNoDisponibleRef.current
+          || 'Suno no confirmó que esta voz esté disponible. Repite la validación con la frase en el tono de tu audio.';
+        setVoiceGen((current) => ({ ...current, taskId, loading: false, error: motivo, voiceId, status }));
+        return false;
+      }
       setVoiceGen((current) => ({ ...current, taskId, loading: false, error: "", voiceId, status, isAvailable: true }));
       setWizardStep(4);
       return true;
@@ -2329,8 +2338,8 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
   const saveToSunoVoices = async () => {
     const voiceId = String(voiceGen.voiceId || "").trim();
     const taskId = String(voiceGen.taskId || "").trim();
-    if (!voiceId || !isVoiceAvailable(voiceGen.isAvailable)) {
-      setSaveError('Suno no confirmó que esta voz esté disponible. Repite la validación antes de guardarla y usarla.');
+    if (!voiceId) {
+      setSaveError('Todavía no tenemos tu voz. Repite la validación antes de guardarla.');
       return false;
     }
     setSaving(true);
@@ -2356,7 +2365,8 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         body: JSON.stringify({
           sunoVoiceId: voiceId,
           name: (profile.name || "Mi voz").trim() || "Mi voz",
-          status: voiceGen.isAvailable ? "ready" : "processing",
+          // Se manda como lista para que el servidor compruebe y devuelva el motivo exacto si no lo está.
+          status: "ready",
           taskId,
           meta,
         }),
