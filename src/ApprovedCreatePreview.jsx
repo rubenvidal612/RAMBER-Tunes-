@@ -1612,7 +1612,9 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         return false;
       }
       const vocalStartS = Math.max(0, Math.floor(Number(profile.start) || 0));
-      const vocalEndS = Math.max(0, Math.floor(Number(profile.end) || 0));
+      const vocalEndTotal = Math.max(0, Math.floor(Number(profile.end) || 0));
+      // Suno solo acepta un fragmento corto para validar la voz (máx 60 s).
+      const vocalEndS = Math.max(vocalStartS + 1, Math.min(vocalEndTotal || vocalStartS + 30, vocalStartS + 60));
       const r = await fetch("/api/suno/voice-validate", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
@@ -1949,7 +1951,9 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         return null;
       }
       const vocalStartS = Math.max(0, Math.floor(Number(profile.start) || 0));
-      const vocalEndS = Math.max(0, Math.floor(Number(profile.end) || 0));
+      const vocalEndTotal = Math.max(0, Math.floor(Number(profile.end) || 0));
+      // Suno solo acepta un fragmento corto para validar la voz (máx 60 s).
+      const vocalEndS = Math.max(vocalStartS + 1, Math.min(vocalEndTotal || vocalStartS + 30, vocalStartS + 60));
       const r = await fetch("/api/suno/voice-validate", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
@@ -2456,7 +2460,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     const t = errorCrudo.toLowerCase();
     if (!t) return "";
     if (t.includes("internal error") || t.includes("please try again") || t.includes("unexpected error") || t.includes("something went wrong")) {
-      return "El servicio de voz falló por un momento. Espera unos segundos y vuelve a intentarlo.";
+      return "Suno no pudo procesar el audio (falló por un momento). Intenta de nuevo; si sigue igual, sube un audio más limpio, sin música de fondo.";
     }
     if (t.includes("invalid") && t.includes("audio")) {
       return "No pudimos leer tu audio. Prueba con otro archivo (MP3 o WAV) o vuelve a subirlo.";
