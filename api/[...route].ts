@@ -4452,6 +4452,23 @@ const sunoHandler = (() => {
     }
   }
 
+  // Deja rastro del error real del proveedor para diagnóstico (no cobra ni expone al usuario).
+  async function guardarErrorValidacion(auth: any, res: any, clientAttemptId: string, info: any) {
+    try {
+      const id = "voice-validate-error:" + String(clientAttemptId || Date.now());
+      await auth.admin.from("suno_tasks").insert({
+        task_id: id,
+        user_id: auth.user.id,
+        kind: "voice-validate-error",
+        cost: 0,
+        consumed: false,
+        extra: { ...info, at: new Date().toISOString() },
+      });
+    } catch (e: any) {
+      console.warn("[voice-validate] no pude guardar el error:", e?.message || e);
+    }
+  }
+
   async function handleVoiceValidate(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -4601,12 +4618,26 @@ const sunoHandler = (() => {
 
       if (!r.ok) {
         const msg = sunoErrorMessage(data, text || `HTTP ${r.status}`);
+        await guardarErrorValidacion(auth, res, clientAttemptId, {
+          stage: "http",
+          status: r.status,
+          msg: String(msg).slice(0, 1200),
+          rawText: String(text || "").slice(0, 2000),
+          rawJson: JSON.stringify(data || null).slice(0, 2000),
+          attemptedUrl: voiceUrlForSuno,
+          vocalStartS,
+          vocalEndS,
+          sourceUrl: voiceUrl,
+        });
         return send(res, 502, {
           error: "Error iniciando validación de voz",
           code: r.status,
           detail: {
             msg: String(msg).slice(0, 1200),
             attemptedUrl: voiceUrlForSuno,
+            vocalStartS,
+            vocalEndS,
+            raw: String(text || "").slice(0, 600),
           },
         });
       }
@@ -4614,12 +4645,26 @@ const sunoHandler = (() => {
       const code = Number(data?.code);
       if (code && code !== 200) {
         const msg = sunoErrorMessage(data, "Error del proveedor");
+        await guardarErrorValidacion(auth, res, clientAttemptId, {
+          stage: "code",
+          code,
+          msg: String(msg).slice(0, 1200),
+          rawText: String(text || "").slice(0, 2000),
+          rawJson: JSON.stringify(data || null).slice(0, 2000),
+          attemptedUrl: voiceUrlForSuno,
+          vocalStartS,
+          vocalEndS,
+          sourceUrl: voiceUrl,
+        });
         return send(res, 502, {
           error: "Error iniciando validación de voz",
           code,
           detail: {
             msg: String(msg).slice(0, 1200),
             attemptedUrl: voiceUrlForSuno,
+            vocalStartS,
+            vocalEndS,
+            raw: String(text || "").slice(0, 600),
           },
         });
       }
