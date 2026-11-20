@@ -1612,9 +1612,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         return false;
       }
       const vocalStartS = Math.max(0, Math.floor(Number(profile.start) || 0));
-      const vocalEndTotal = Math.max(0, Math.floor(Number(profile.end) || 0));
-      // Suno solo acepta un fragmento corto para validar la voz (máx 60 s).
-      const vocalEndS = Math.max(vocalStartS + 1, Math.min(vocalEndTotal || vocalStartS + 30, vocalStartS + 60));
+      const vocalEndS = Math.max(0, Math.floor(Number(profile.end) || 0));
       const r = await fetch("/api/suno/voice-validate", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
@@ -1951,9 +1949,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
         return null;
       }
       const vocalStartS = Math.max(0, Math.floor(Number(profile.start) || 0));
-      const vocalEndTotal = Math.max(0, Math.floor(Number(profile.end) || 0));
-      // Suno solo acepta un fragmento corto para validar la voz (máx 60 s).
-      const vocalEndS = Math.max(vocalStartS + 1, Math.min(vocalEndTotal || vocalStartS + 30, vocalStartS + 60));
+      const vocalEndS = Math.max(0, Math.floor(Number(profile.end) || 0));
       const r = await fetch("/api/suno/voice-validate", {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${t.token}` },
