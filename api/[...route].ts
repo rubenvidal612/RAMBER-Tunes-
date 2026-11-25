@@ -1645,9 +1645,21 @@ function isAdminEmail(email?: string | null) {
 function buildUserPlanFromTransactions(rows: any[], nowMs = Date.now()) {
   const list = Array.isArray(rows) ? rows : [];
 
+  // Cualquier paquete pagado de la tienda cuenta como plan activo.
+  const PLAN_POR_PAQUETE: Record<string, string> = {
+    inicio: "inicio",
+    inicio_50: "inicio",
+    basico_100: "inicio",
+    chico_10: "inicio",
+    mediano_30: "inicio",
+    pack_grande_250: "inicio",
+    mini_3: "inicio",
+    productor: "productor",
+    ninguno: "ninguno",
+  };
   const pickPlanKey = (raw: any) => {
     const k = String(raw || "").trim().toLowerCase();
-    return k === "inicio" || k === "productor" || k === "ninguno" ? k : "";
+    return PLAN_POR_PAQUETE[k] || "";
   };
 
   const latestPlanEvent =
@@ -1684,11 +1696,12 @@ function buildUserPlanFromTransactions(rows: any[], nowMs = Date.now()) {
   const hasProductor = list.some((t: any) => String(t?.pack_key || "").trim().toLowerCase() === "productor");
   const has_paid_ever = list.some((t: any) => {
     const pk = String(t?.pack_key || "").trim().toLowerCase();
-    if (!(pk === "inicio" || pk === "productor")) return false;
     const paymentId = String(t?.payment_id || "").trim();
     if (paymentId.startsWith("claim:")) return false;
+    // Cualquier movimiento con dinero real cuenta como pago.
     const amt = Number(t?.amount_mxn);
     if (Number.isFinite(amt) && amt > 0) return true;
+    if (!PLAN_POR_PAQUETE[pk]) return false;
     if (paymentId && !paymentId.startsWith("free:")) return true;
     return false;
   });
