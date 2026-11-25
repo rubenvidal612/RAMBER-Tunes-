@@ -16901,8 +16901,20 @@ const adminHandler = (() => {
       const credits_mode = (body?.credits_mode || "none").toString().trim().toLowerCase();
       const credits = Number(body?.credits ?? 0);
 
+      // Créditos que otorga cada paquete cuando se aplica a mano desde el panel.
+      const CREDITOS_POR_PAQUETE: Record<string, number> = {
+        inicio: 1200,
+        productor: 2000,
+        mini_3: 36,
+        inicio_50: 72,
+        chico_10: 120,
+        basico_100: 120,
+        mediano_30: 360,
+        pack_grande_250: 600,
+      };
+
       if (!email) return adminSendError(res, 400, "Falta email", eid);
-      if (!(plan_key === "ninguno" || plan_key === "inicio" || plan_key === "productor")) {
+      if (plan_key !== "ninguno" && !CREDITOS_POR_PAQUETE[plan_key]) {
         return adminSendError(res, 400, "Plan inválido", eid);
       }
       if (!(credits_mode === "none" || credits_mode === "default" || credits_mode === "set")) {
@@ -16925,9 +16937,7 @@ const adminHandler = (() => {
       if (insertTr?.error) adminServerLog(eid, safeHandler, { step: "insert.mp_transactions_err", err: insertTr.error });
 
       if (credits_mode === "default") {
-        let add = 0;
-        if (plan_key === "inicio") add = 1200;
-        if (plan_key === "productor") add = 2000;
+        const add = Number(CREDITOS_POR_PAQUETE[plan_key] || 0);
         if (add > 0) {
           const upd = await applyCreditRolloverWithCap(admin, {
             userId,
