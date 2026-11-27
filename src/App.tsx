@@ -4793,7 +4793,7 @@ export default function App() {
         {/* Mobile View Switching */}
         <div className={`${currentTab === 'landing' ? 'home-mobile-layout' : currentTab === 'studio' ? 'hidden' : 'flex md:hidden'} flex-1 flex-col pb-[76px] relative overflow-hidden`}>
            {currentTab === 'landing' && (
-             <HomeLandingView onGoStudio={() => setCurrentTab('studio')} onOpenPlans={() => setIsPricingOpen(true)} />
+             <HomeLandingView />
            )}
            {currentTab === 'inicio' && (
              isAuthed ? (
@@ -4867,7 +4867,7 @@ export default function App() {
 
             {currentTab === 'landing' ? (
               <div className="flex-1 min-w-0 min-h-0 overflow-hidden flex flex-col bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30">
-                <HomeLandingView onGoStudio={() => setCurrentTab('studio')} onOpenPlans={() => setIsPricingOpen(true)} />
+                <HomeLandingView />
              </div>
             ) : currentTab === 'inicio' ? (
              <div className="flex-1 bg-gradient-to-b from-indigo-950/25 via-black/10 to-black/30">
