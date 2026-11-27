@@ -4791,7 +4791,7 @@ export default function App() {
       <main className="flex-1 min-h-0 overflow-hidden flex w-full h-full relative">
         {currentTab === 'studio' && <FloatingOrderWidget />}
         {/* Mobile View Switching */}
-        <div className={`${currentTab === 'landing' ? 'home-mobile-layout' : 'flex md:hidden'} flex-1 flex-col pb-[76px] relative overflow-hidden`}>
+        <div className={`${currentTab === 'landing' ? 'home-mobile-layout' : currentTab === 'studio' ? 'hidden' : 'flex md:hidden'} flex-1 flex-col pb-[76px] relative overflow-hidden`}>
            {currentTab === 'landing' && (
              <HomeLandingView onGoStudio={() => setCurrentTab('studio')} onOpenPlans={() => setIsPricingOpen(true)} />
            )}
@@ -4808,22 +4808,6 @@ export default function App() {
                  }}
                />
              )
-           )}
-           {currentTab === 'studio' && (
-             <div className="flex-1 min-h-0">
-              <ApprovedCreatePreview
-                 credits={displayCredits}
-                 onSongCreated={addCancion}
-                 onGoLibrary={() => setCurrentTab('biblioteca')}
-                 onGoCloneVoice={() => setCurrentTab('voces')}
-                 onOpenBalance={() => handleTabChange('planes')}
-                onShowAlert={showStyledAlert}
-                authUserId={authUserId}
-                hasPaid={hasPaid}
-                 prefill={studioPrefill || undefined}
-                 prefillNonce={studioPrefillNonce}
-               />
-             </div>
            )}
            {currentTab === 'voces' && (
             <Clonador onClose={() => setCurrentTab('studio')} hasPaid={hasPaid} />
@@ -4875,7 +4859,7 @@ export default function App() {
            )}
         </div>
         {/* Desktop 3-column layout */}
-        <div className={`${currentTab === 'landing' ? 'home-desktop-layout' : 'hidden md:flex'} flex-1 min-h-0 overflow-hidden`}>
+        <div className={`${currentTab === 'landing' ? 'home-desktop-layout flex-1' : currentTab === 'studio' ? 'hidden shrink-0 md:flex' : 'hidden flex-1 md:flex'} min-h-0 overflow-hidden`}>
            {/* Sidebar */}
            <div className="w-[200px] lg:w-[240px] shrink-0 min-h-0 h-full border-r border-white/10 bg-gradient-to-b from-[#0b1224]/70 via-[#070a12]/60 to-black/40 backdrop-blur-2xl flex flex-col overflow-hidden">
              <Sidebar currentTab={currentTab} onChange={handleTabChange} isAdmin={isAdmin} />
@@ -4900,22 +4884,7 @@ export default function App() {
                  />
                )}
              </div>
-           ) : currentTab === 'studio' ? (
-             <div className="flex-1 min-w-0 bg-[#07111d]">
-              <ApprovedCreatePreview
-                 credits={displayCredits}
-                 onSongCreated={addCancion}
-                 onGoLibrary={() => setCurrentTab('biblioteca')}
-                 onGoCloneVoice={() => setCurrentTab('voces')}
-                 onOpenBalance={() => handleTabChange('planes')}
-                onShowAlert={showStyledAlert}
-                authUserId={authUserId}
-                hasPaid={hasPaid}
-                 prefill={studioPrefill || undefined}
-                 prefillNonce={studioPrefillNonce}
-               />
-             </div>
-           ) : (
+           ) : currentTab === 'studio' ? null : (
              <>
                {/* Create View (Middle) */}
               {currentTab !== 'karaoke' && currentTab !== 'voces' && currentTab !== 'masterizar' && currentTab !== 'vendedor' && currentTab !== 'oficina' && currentTab !== 'biblioteca' && currentTab !== 'perfil' && currentTab !== 'planes' && currentTab !== 'luciana' && currentTab !== 'pedidos' && (
@@ -4985,6 +4954,23 @@ export default function App() {
              </>
            )}
         </div>
+        {currentTab === 'studio' && (
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden bg-[#07111d] pb-[76px] md:pb-0">
+            <ApprovedCreatePreview
+              credits={displayCredits}
+              onSongCreated={addCancion}
+              onGoLibrary={() => handleTabChange('biblioteca')}
+              onGoCloneVoice={() => setCurrentTab('voces')}
+              onOpenBalance={() => handleTabChange('planes')}
+              onShowAlert={showStyledAlert}
+              authUserId={authUserId}
+              hasPaid={hasPaid}
+              prefill={studioPrefill || undefined}
+              prefillNonce={studioPrefillNonce}
+              onPrefillApplied={() => setStudioPrefill(current => current === studioPrefill ? null : current)}
+            />
+          </div>
+        )}
       </main>
 
       {nowPlayingOpen && activeSong ? (
