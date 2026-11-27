@@ -5706,6 +5706,11 @@ function SongOptionsSheet({
         alert('Esta canción no tiene información para separar (taskId/audioId). Si es una canción subida o muy vieja, no se puede separar.');
         return;
       }
+      // En un cover, Suno detecta la grabación original y no permite separar la voz.
+      if (song.isCover === true) {
+        alert('Esta canción es un cover. Suno no permite quitar la voz de un cover porque detecta la grabación original (derechos de autor). No se cobró nada.');
+        return;
+      }
       // Las canciones de LucIAna V1 (proveedor treblo) no existen en Suno: no se pueden separar.
       const esLuciana = String((song as any).provider || '').toLowerCase() === 'treblo'
         || String(song.sunoTaskId || '').startsWith('treblo:')
