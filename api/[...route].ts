@@ -761,6 +761,51 @@ async function uploadToR2(key: string, body: any, contentType: string): Promise<
   return `${env.publicBaseUrl}/${key}`;
 }
 
+// Convierte un archivo de R2 (video incluido) a MP3 usando ffmpeg.
+// Devuelve la llave del MP3 resultante; el audio se sube a R2.
+async function convertR2FileToMp3(sourceKey: string, destKey: string): Promise<{ ok: boolean; key?: string; error?: string }> {
+  const os = await import("node:os");
+  const pathMod = await import("node:path");
+  const fsmod = await import("node:fs/promises");
+  const cproc = await import("node:child_process");
+  const inst: any = await import("@ffmpeg-installer/ffmpeg");
+  const ffmpegPath = String(inst?.path || "");
+  if (!ffmpegPath) return { ok: false, error: "ffmpeg no disponible" };
+
+  const tmpDir = await fsmod.mkdtemp(pathMod.join(os.tmpdir(), "vid2mp3-"));
+  const inPath = pathMod.join(tmpDir, "entrada");
+  const outPath = pathMod.join(tmpDir, "salida.mp3");
+  try {
+    const env = getR2Env();
+    const client = await getR2Client();
+    const { GetObjectCommand } = await getR2AwsSdk();
+    const obj: any = await client.send(new GetObjectCommand({ Bucket: env.bucketName, Key: sourceKey }));
+    const bytes = Buffer.from(await obj.Body.transformToByteArray());
+    if (!bytes.length) return { ok: false, error: "El archivo está vacío" };
+    await fsmod.writeFile(inPath, bytes);
+
+    // -vn: quita el video | libmp3lame: MP3 | 192k: buena calidad para clonar
+    await new Promise<void>((resolve, reject) => {
+      const p = cproc.spawn(ffmpegPath, ["-y", "-i", inPath, "-vn", "-acodec", "libmp3lame", "-b:a", "192k", outPath], {
+        windowsHide: true,
+      });
+      let err = "";
+      p.stderr.on("data", (d: any) => { err += String(d); });
+      p.on("error", (e: any) => reject(e));
+      p.on("close", (code: number) => (code === 0 ? resolve() : reject(new Error("ffmpeg_" + code + ":" + err.slice(-400)))));
+    });
+
+    const mp3 = await fsmod.readFile(outPath);
+    if (!mp3.length) return { ok: false, error: "No quedó audio en el archivo" };
+    await uploadToR2(destKey, mp3, "audio/mpeg");
+    return { ok: true, key: destKey };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || String(e) };
+  } finally {
+    try { await fsmod.rm(tmpDir, { recursive: true, force: true }); } catch {}
+  }
+}
+
 // TEMP-LOGGING: quitar despues de diagnostico
 async function insertR2CopyLog(admin: any, input: {
   taskId: string;
@@ -4864,6 +4909,37 @@ const sunoHandler = (() => {
     }
   }
 
+  // Convierte un video (o cualquier archivo ya subido) en MP3 para usarlo como audio de voz.
+  async function handleExtractMp3(req: any, res: any) {
+    if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
+    const auth = await requireUser(req);
+    if (!auth.ok) return send(res, auth.status, { error: auth.error });
+
+    const payload = parseJsonBody(req);
+    const key = String(payload?.key || "").toString().trim().replace(/^\/+/, "");
+    if (!key) return send(res, 400, { error: "Falta la llave del archivo" });
+
+    const uid = String((auth as any).user?.id || "").trim();
+    const prefijos = [`uploads/audio/${uid}/`, `voice/${uid}/`, `audio/${uid}/`];
+    if (!prefijos.some((p) => key.startsWith(p))) {
+      return send(res, 403, { error: "No autorizado para este archivo" });
+    }
+
+    const destino = key.replace(/\.[a-z0-9]+$/i, "") + "-audio.mp3";
+    const out = await convertR2FileToMp3(key, destino);
+    if (!out.ok || !out.key) {
+      return send(res, 502, { error: "No pude quitar el video y dejar el audio.", detail: out.error || "" });
+    }
+
+    try {
+      const url = await getSignedR2Url(out.key, 60 * 60 * 24);
+      return send(res, 200, { ok: true, key: out.key, url });
+    } catch {
+      const env = getR2Env();
+      return send(res, 200, { ok: true, key: out.key, url: `${env.publicBaseUrl}/${out.key}` });
+    }
+  }
+
   async function handleVoiceGenerate(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -7110,6 +7186,7 @@ notify pgrst, 'reload schema';`;
       if (a === "voice-generate") return handleVoiceGenerate(req, res);
       if (a === "voice-record-info") return handleVoiceRecordInfo(req, res);
       if (a === "voice-check-voice") return handleVoiceCheckVoice(req, res);
+      if (a === "extract-mp3") return handleExtractMp3(req, res);
       if (a === "voices") {
         if (voicesSub === "refresh") return handleSunoVoicesRefresh(req, res);
         if (voicesSub === "renew") return handleSunoVoicesRenew(req, res);

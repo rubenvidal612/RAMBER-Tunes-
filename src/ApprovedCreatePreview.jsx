@@ -1440,8 +1440,64 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     }
   };
 
+  const esArchivoDeVideo = (f) => {
+    const tipo = String(f?.type || "").toLowerCase();
+    const nombre = String(f?.name || "").toLowerCase();
+    return tipo.startsWith("video/") || /\.(mp4|mov|m4v|webm|mkv|avi|flv)$/.test(nombre);
+  };
+
   const acceptMp3 = async (file, field) => {
     if (!file) return;
+    // Video: el navegador no puede convertirlo, así que se sube y el servidor le quita el video.
+    if (field === "sourceAudio" && esArchivoDeVideo(file)) {
+      setSaveError("");
+      setToast("Quitando el video y dejando el audio…");
+      const subido = await uploadWizardAudio(file, "source");
+      if (!subido?.key) return;
+      try {
+        const t = await getAccessToken();
+        if (!t.ok) { setToast(t.error || "No se pudo iniciar sesión."); return; }
+        setToast("Convirtiendo el video a MP3…");
+        const r = await fetch("/api/audio/extract-mp3", {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: "Bearer " + t.token },
+          body: JSON.stringify({ key: subido.key }),
+        });
+        const out = await r.json().catch(() => ({}));
+        const url = String(out?.url || "").trim();
+        const key = String(out?.key || "").trim();
+        if (!r.ok || !url) {
+          setToast(String(out?.detail || out?.error || "No pude quitar el video de ese archivo."));
+          return;
+        }
+        setSourceUpload({ url, key, loading: false, error: "" });
+        const audio = new Audio(url);
+        audio.addEventListener(
+          "loadedmetadata",
+          () => {
+            const duration = Math.max(1, Math.floor(audio.duration));
+            if (duration < MINIMO_SEGUNDOS) {
+              setSaveError("Tu audio dura " + formatearDuracion(duration) + ". Necesitamos al menos 20 segundos para reconocer tu voz.");
+              return;
+            }
+            setProfile((current) => ({ ...current, sourceAudio: file, audioDuration: duration, start: 0, end: duration }));
+            setToast("Audio listo. Ya puedes validar tu voz.");
+          },
+          { once: true },
+        );
+        audio.addEventListener(
+          "error",
+          () => {
+            setProfile((current) => ({ ...current, sourceAudio: file, audioDuration: 420, start: 0, end: 420 }));
+            setToast("Convertí el video a audio. Ya puedes validar tu voz.");
+          },
+          { once: true },
+        );
+      } catch (e) {
+        setToast(e instanceof Error ? e.message : "No pude convertir el video a audio.");
+      }
+      return;
+    }
     if (!isAlreadyMp3(file)) {
       // Suno solo acepta MP3: se convierte aqui mismo en vez de mandar a una pagina externa.
       try {
@@ -2579,7 +2635,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
               <span style={{ display: "block", marginTop: 10, fontSize: 15, color: "#8b95a6", lineHeight: 1.5 }}>
                 Solo tu voz, sin instrumental ni otras personas. Este mismo audio se usa para tu cover, así no grabas dos veces.
               </span>
-              <input type="file" accept="audio/*" style={{ display: "none" }}
+              <input type="file" accept="audio/*,video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.m4v,.webm,.mkv,.avi" style={{ display: "none" }}
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) acceptMp3(f, "sourceAudio"); }} />
             </label>
             <div style={{ textAlign: "center", color: "#6b7686", fontSize: 11, marginTop: 6 }}>o, si no tienes el archivo a mano</div>
