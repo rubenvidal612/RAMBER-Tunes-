@@ -2471,6 +2471,16 @@ export default function App() {
   }, []);
 
   const isAuthed = Boolean(authEmail);
+
+  useEffect(() => {
+    if (!isAuthed || window.location.pathname !== '/') return;
+    try {
+      if (sessionStorage.getItem('luciana-return-to-clone') !== '1') return;
+      sessionStorage.removeItem('luciana-return-to-clone');
+      window.history.replaceState(window.history.state, '', '/clonador');
+      setCurrentTab('voces');
+    } catch {}
+  }, [isAuthed]);
   const didBootstrapRef = useRef(false);
 
   const [shareRouteId] = useState(() => {
@@ -4522,6 +4532,13 @@ export default function App() {
               onClick={() => {
                 if (isStartingLogin) return;
                 setIsStartingLogin(true);
+                try {
+                  if (tabFromPathname(window.location.pathname) === 'voces') {
+                    sessionStorage.setItem('luciana-return-to-clone', '1');
+                  } else {
+                    sessionStorage.removeItem('luciana-return-to-clone');
+                  }
+                } catch {}
                 signInWithGoogle()
                   .then((r) => {
                     if (!r.ok) {

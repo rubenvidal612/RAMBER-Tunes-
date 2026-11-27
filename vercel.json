@@ -72,6 +72,10 @@
   ],
   "routes": [
     {
+      "src": "/clonacion/?",
+      "dest": "/clonacion/index.html"
+    },
+    {
       "handle": "filesystem"
     },
     {
