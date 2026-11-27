@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crea un álbum con tu voz | LucIAna Music</title>
+<meta name="description" content="Escucha cómo suena una voz clonada en una canción y prueba LucIAna Music con tu propia voz.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Crea un álbum con tu voz | LucIAna Music">
+<meta property="og:description" content="Descubre cómo suena la clonación de voz en LucIAna Music.">
+<meta property="og:image" content="https://lucianamusic.app/assets/tool-clone-voice.png">
+<script>
+const params = new URLSearchParams(location.search);
+const explicitTheme = params.get('tema');
+let savedTheme;
+try { savedTheme = localStorage.getItem('luciana-clonacion-tema'); } catch {}
+document.documentElement.dataset.theme = ['claro','oscuro'].includes(explicitTheme)
+  ? explicitTheme : savedTheme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'oscuro' : 'claro');
+</script>
+<style>
+:root{--bg:#f8f4ec;--fg:#19152d;--muted:#544664;--card:#fffaf3;--line:#dacbe8;--wave:#713bc4;--gold:#ffd052;color-scheme:light}
+[data-theme=oscuro]{--bg:#09091b;--fg:#fff4e5;--muted:#c8b9d9;--card:#19132d;--line:#563c75;--wave:#c18aff;color-scheme:dark}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:1rem/1.55 system-ui,sans-serif}
+header,main,footer{width:min(100% - 2rem,66rem);margin:auto}header{display:flex;align-items:center;justify-content:space-between;gap:.65rem;padding:1rem 0}header nav{display:flex;gap:.5rem;align-items:center}
+a{color:inherit}button,.cta{font:inherit;font-weight:700;border-radius:1rem;padding:.65rem 1rem;min-height:44px;cursor:pointer}
+button{color:var(--fg);background:var(--card);border:1px solid var(--line)}
+.brand{text-decoration:none;font-weight:800}.brand span{display:inline-grid;place-items:center;width:2rem;height:2rem;background:var(--gold);color:#1a1026;border-radius:.6rem;margin-right:.35rem}
+.hero{display:grid;gap:1.5rem;align-items:center;padding:2rem 0}.hero img{width:100%;display:block;max-height:25rem;object-fit:cover;border-radius:1.5rem;border:1px solid var(--line)}
+h1,h2{font-family:Georgia,serif;line-height:1.04;margin:0;letter-spacing:-.035em}h1{font-size:clamp(2.85rem,9vw,5.6rem)}h2{font-size:clamp(2rem,6vw,3.4rem)}
+p{color:var(--muted)}.lead{font-size:1.14rem;max-width:34rem}.cta{display:inline-flex;align-items:center;justify-content:center;background:var(--gold);color:#1b1025;text-decoration:none;padding:.85rem 1.25rem}.primary{animation:pulse 1.25s ease-out 2 350ms}
+@keyframes pulse{0%{box-shadow:0 0 0 0 #e6a40090}100%{box-shadow:0 0 0 13px #e6a40000}}
+section{padding:1.7rem 0}.tracks,.steps{display:grid;gap:.8rem;margin:1rem 0}.track,.step{border:1px solid var(--line);border-radius:1rem;background:var(--card);padding:1rem}.track strong{display:block}.controls{display:flex;gap:.75rem;align-items:center;margin-top:.6rem}.play{min-width:44px}.wave{display:flex;gap:3px;align-items:center;height:2rem;flex:1;overflow:hidden}.wave i{display:block;width:4px;flex:0 0 4px;border-radius:4px;background:var(--wave);height:var(--h)}.track.playing .wave i{animation:wave .7s ease-in-out infinite alternate;animation-delay:var(--delay)}@keyframes wave{to{transform:scaleY(.35)}}
+footer{border-top:1px solid var(--line);padding:1rem 0 2rem;color:var(--muted)}#copied{min-height:1.5em}a:focus-visible,button:focus-visible{outline:3px solid var(--wave);outline-offset:4px}
+@media(min-width:700px){.hero{grid-template-columns:1.2fr 1fr;padding:3.6rem 0}.tracks{grid-template-columns:1fr 1fr}.steps{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:699px){.hero img{max-height:13rem}.cta{width:100%}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important}}
+</style>
+</head>
+<body>
+<header>
+<a class="brand" href="/clonacion"><span aria-hidden="true">L</span>LucIAna Music</a>
+<nav><button id="theme" type="button"></button><a href="/clonador">Entrar</a></nav>
+</header>
+<main>
+<section class="hero">
+<div><h1>Crea un álbum con tu voz</h1><p class="lead">Dale tu voz a tus canciones. Empieza con un tema, explora otros géneros y crea tu propio álbum, canción por canción.</p>
+<a class="cta primary" href="/clonador">Probar con mi voz</a></div>
+<img src="/assets/tool-clone-voice.png" width="768" height="768" alt="Micrófono con iluminación violeta en un estudio musical" fetchpriority="high">
+</section>
+<section aria-labelledby="demo-title">
+<h2 id="demo-title">Escucha la diferencia</h2>
+<p id="availability">Las muestras de voz estarán disponibles pronto.</p>
+<div class="tracks" id="tracks" hidden>
+<article class="track"><strong>Voz original</strong><div class="controls"><button type="button" class="play" aria-label="Reproducir voz original" aria-pressed="false">▶</button><span class="wave" aria-hidden="true"></span></div><audio preload="none"></audio></article>
+<article class="track"><strong>Voz clonada</strong><div class="controls"><button type="button" class="play" aria-label="Reproducir voz clonada" aria-pressed="false">▶</button><span class="wave" aria-hidden="true"></span></div><audio preload="none"></audio></article>
+</div>
+<style>[hidden]{display:none!important}</style>
+<p id="audio-status" role="status"></p>
+</section>
+<section aria-labelledby="steps-title">
+<h2 id="steps-title">De tu voz a tu primera canción</h2>
+<div class="steps"><article class="step"><strong>1. Prepara tu muestra de voz</strong><p>Usa una grabación tuya en la que se te escuche con claridad.</p></article>
+<article class="step"><strong>2. Crea tu canción</strong><p>Elige un estilo y prueba cómo suena con tu voz.</p></article>
+<article class="step"><strong>3. Dale forma a tu álbum</strong><p>Crea más canciones y reúne tus favoritas.</p></article></div>
+<a class="cta" href="/clonador">Probar con mi voz</a>
+</section>
+</main>
+<footer><button id="share" type="button">Copiar enlace de este tema</button><div id="copied" role="status"></div></footer>
+<script>
+const themeButton = document.querySelector('#theme');
+function currentTheme() { return document.documentElement.dataset.theme; }
+function refreshThemeButton() {
+  const next = currentTheme() === 'claro' ? 'oscuro' : 'claro';
+  themeButton.textContent = next === 'claro' ? '☀ Claro' : '☾ Oscuro';
+  themeButton.setAttribute('aria-label', 'Cambiar a modo ' + next);
+}
+function themedUrl() {
+  const url = new URL(location.href);
+  url.searchParams.set('tema', currentTheme());
+  return url;
+}
+refreshThemeButton();
+themeButton.addEventListener('click', () => {
+  document.documentElement.dataset.theme = currentTheme() === 'claro' ? 'oscuro' : 'claro';
+  try { localStorage.setItem('luciana-clonacion-tema', currentTheme()); } catch {}
+  history.replaceState(history.state, '', themedUrl());
+  refreshThemeButton();
+});
+document.querySelector('#share').addEventListener('click', async () => {
+  const url = themedUrl();
+  try {
+    await navigator.clipboard.writeText(url.href);
+    document.querySelector('#copied').textContent = 'Enlace copiado.';
+  } catch {
+    document.querySelector('#copied').textContent = url.href;
+  }
+});
+const tracks = [...document.querySelectorAll('.track')];
+const audioStatus = document.querySelector('#audio-status');
+tracks.forEach((track) => {
+  const player = track.querySelector('audio');
+  const button = track.querySelector('button');
+  const label = track.querySelector('strong').textContent.toLowerCase();
+  for (let i = 0; i < 42; i++) {
+    const bar = document.createElement('i');
+    bar.style.setProperty('--h', (17 + ((i * 29 + i * i * 7) % 79)) + '%');
+    bar.style.setProperty('--delay', (-i * .06) + 's');
+    track.querySelector('.wave').append(bar);
+  }
+  function refresh() {
+    const playing = !player.paused && !player.ended;
+    track.classList.toggle('playing', playing);
+    button.textContent = playing ? '❚❚' : '▶';
+    button.setAttribute('aria-pressed', String(playing));
+    button.setAttribute('aria-label', (playing ? 'Pausar ' : 'Reproducir ') + label);
+  }
+  ['play', 'pause', 'ended'].forEach(event => player.addEventListener(event, refresh));
+  button.addEventListener('click', async () => {
+    if (!player.paused) { player.pause(); return; }
+    tracks.forEach(other => { if (other !== track) other.querySelector('audio').pause(); });
+    audioStatus.textContent = '';
+    try { await player.play(); }
+    catch (error) { if (error.name !== 'AbortError') audioStatus.textContent = 'No se pudo reproducir la muestra. Intenta de nuevo.'; }
+  });
+});
+fetch('/clonacion/muestras.json').then(response => response.ok ? response.json() : null).then(samples => {
+  if (!samples || !samples.original || !samples.clone) return;
+  tracks[0].querySelector('audio').src = samples.original;
+  tracks[1].querySelector('audio').src = samples.clone;
+  document.querySelector('#availability').textContent = 'Compara la misma frase cantada con la voz original y la voz clonada.';
+  document.querySelector('#tracks').hidden = false;
+}).catch(() => {});
+</script>
+</body>
+</html>
