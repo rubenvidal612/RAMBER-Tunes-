@@ -1,7 +1,7 @@
 import { ArrowRight, AudioLines, Download, Mic, Video } from 'lucide-react';
 import './home-landing.css';
 
-const videoUrl = import.meta.env.VITE_HOME_MUSIC_VIDEO_URL?.trim();
+const videoUrl = '/assets/clonacion-antes-despues.mp4';
 
 function CloneLink() {
   return (
@@ -28,9 +28,16 @@ export function HomeLandingView() {
             <p className="album-note">Consulta la disponibilidad de la promoción en el clonador.</p>
           </div>
           <figure className="album-art">
+            <div className="album-waves" aria-hidden="true"><i /><i /><i /></div>
             <img src="/assets/inicio-album-voz.webp" width="825" height="669" alt="Portada Mi Álbum con mi voz junto a un vinilo iluminado en violeta" fetchPriority="high" />
           </figure>
         </div>
+      </section>
+
+      <section className="album-shell album-example" aria-labelledby="clone-demo-title">
+        <h2 id="clone-demo-title">Clonación de voz: antes y después</h2>
+        <p>Escucha la voz original y cómo suena en la canción.</p>
+        <video src={videoUrl} controls playsInline preload="none" poster="/assets/clonacion-antes-despues.webp" aria-label="Demostración de clonación de voz antes y después" />
       </section>
 
       <section className="album-shell album-extras" aria-label="Opciones para tus canciones">
@@ -38,11 +45,6 @@ export function HomeLandingView() {
         <article><AudioLines aria-hidden="true" /><h2>Elimina la voz de tus canciones</h2><p>Quédate con la pista instrumental de las canciones compatibles.</p><a href="/biblioteca">Ir a Mis canciones <ArrowRight size={16} aria-hidden="true" /></a></article>
         <article><Video aria-hidden="true" /><h2>Crea videos para tus redes</h2><p>Convierte tus canciones en videos para compartir en redes sociales.</p><a href="/biblioteca">Elige una canción <ArrowRight size={16} aria-hidden="true" /></a></article>
       </section>
-
-      {videoUrl && <section className="album-shell album-example">
-        <h2>Así se ve un video musical</h2>
-        <video src={videoUrl} controls playsInline preload="metadata" />
-      </section>}
 
       <section className="album-shell album-bottom"><CloneLink /></section>
     </div>
