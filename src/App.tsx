@@ -3899,7 +3899,9 @@ export default function App() {
             } catch {}
             showToast('La voz seleccionada expiró. Entra a “Clonador” y elige otra voz (o vuelve a crearla).');
           } else if (String(pending.kind || '').toLowerCase() === 'separate_vocal' || String(pending.kind || '').toLowerCase() === 'split_stem') {
-            showToast('No se pudo quitar la voz esta vez. Te devolvimos el crédito: puedes intentarlo de nuevo.');
+            // Se muestra el motivo real que dio el proveedor (antes se ocultaba).
+            const motivo = raw && !/^error en la generaci/i.test(raw) ? ' Motivo: ' + raw.slice(0, 220) : '';
+            showToast(`No se pudo quitar la voz esta vez.${motivo} Te devolvimos el crédito; puedes intentarlo de nuevo.`);
           } else {
             showToast(raw || 'Error en la generación');
           }
