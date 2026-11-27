@@ -5596,6 +5596,41 @@ const uploadAudioForVoice = async (token, file) => {
   }
 };
 
+function hasSongDraft(draft) {
+  const data = draft?.data;
+  return Boolean(data && (
+    Number(draft.step) > 0 ||
+    [data.title, data.lyrics, data.style, data.negative, data.lyricInstruction].some(value => String(value || '').trim()) ||
+    (data.model && data.model !== 'Suno V6') ||
+    (data.voice && data.voice !== 'standard') ||
+    data.voiceProfile || data.vocalGender || data.instrumental ||
+    (data.audioSource && data.audioSource !== 'none') ||
+    draft.audioUploadUrl || draft.audioUploadPath ||
+    (typeof draft.creativity === 'number' && draft.creativity !== 50) ||
+    (typeof draft.instruction === 'number' && draft.instruction !== 50) ||
+    (typeof draft.audioWeight === 'number' && draft.audioWeight !== 25)
+  ));
+}
+
+function readSongDraft(draftKey, latestDraftKey, legacyDraftKey) {
+  const read = (key) => {
+    try { return JSON.parse(window.localStorage.getItem(key) || 'null'); } catch { return null; }
+  };
+  const workspaceDraft = read(draftKey);
+  if (workspaceDraft?.cleared || hasSongDraft(workspaceDraft)) return workspaceDraft;
+  const latestDraft = read(latestDraftKey);
+  if (latestDraft?.cleared) return latestDraft;
+
+  // Versiones anteriores podían sobrescribir el respaldo con un formulario vacío.
+  const candidates = [latestDraft, read(legacyDraftKey)];
+  const prefix = `${legacyDraftKey}.ws_`;
+  for (let i = 0; i < window.localStorage.length; i += 1) {
+    const key = window.localStorage.key(i);
+    if (key?.startsWith(prefix) && key !== draftKey) candidates.push(read(key));
+  }
+  return candidates.filter(hasSongDraft).sort((a, b) => Number(b.savedAt || 0) - Number(a.savedAt || 0))[0];
+}
+
 function ApprovedCreateContent(props) {
   const {
     credits = 0,
@@ -5607,6 +5642,7 @@ function ApprovedCreateContent(props) {
     authUserId,
     prefill,
     prefillNonce,
+    onPrefillApplied,
   } = props || {};
 
   const makeInitialData = () => ({
@@ -5659,40 +5695,17 @@ function ApprovedCreateContent(props) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [creditsGate, setCreditsGate] = useState(null);
   const [hasPendingTask, setHasPendingTask] = useState(false);
-  const [orphanDrafts, setOrphanDrafts] = useState([]);
+  const [draftReady, setDraftReady] = useState(false);
+  const [showDraftChoice, setShowDraftChoice] = useState(false);
+  const skipRestoredWriteRef = useRef(false);
+  const lastPrefillNonceRef = useRef(null);
   const [audioUploadError, setAudioUploadError] = useState("");
   const audioRequestVersionRef = useRef(0);
   const contentAreaRef = useRef(null);
   const previousStepRef = useRef(step);
-  const previousUserIdRef = useRef(safeUserId);
 
   useEffect(() => { ensureAnonSession().catch(() => {}); }, []);
   useEffect(() => { clearGenerationSession(); }, []);
-
-  useEffect(() => {
-    if (previousUserIdRef.current === safeUserId) return;
-    previousUserIdRef.current = safeUserId;
-    audioRequestVersionRef.current += 1;
-    setStep(0);
-    setCreativity(50);
-    setInstruction(50);
-    setAudioWeight(25);
-    setToast("");
-    setData(makeInitialData());
-    setAudioUploadUrl('');
-    setAudioUploadPath('');
-    setIsUploadingAudio(false);
-    setUploadProgress(0);
-    setAudioReuploadNeeded(false);
-    setAudioUploadError('');
-    setIsGeneratingLyrics(false);
-    setIsBoostingStyle(false);
-    setIsTranslatingStyle(false);
-    setIsTranscribingAudioLyrics(false);
-    setAudioLyricsStatus('');
-    setIsSubmitting(false);
-    setCreditsGate(null);
-  }, [safeUserId]);
 
   // Si viene del clonador, se usa esa voz Y el audio original, y se salta a la letra.
   useEffect(() => {
@@ -5721,7 +5734,7 @@ function ApprovedCreateContent(props) {
   }, []);
   const applyDraftPayload = (parsed) => {
     if (!parsed || typeof parsed !== 'object') return;
-    // Siempre se empieza en el paso 1 (Inicio), aunque el borrador guardara otro paso.
+    setStep(Number.isInteger(parsed.step) ? Math.max(0, Math.min(3, parsed.step)) : 0);
     if (typeof parsed.creativity === 'number') setCreativity(Math.max(0, Math.min(100, parsed.creativity)));
     if (typeof parsed.instruction === 'number') setInstruction(Math.max(0, Math.min(100, parsed.instruction)));
     if (typeof parsed.audioWeight === 'number') setAudioWeight(Math.max(0, Math.min(100, parsed.audioWeight)));
@@ -5742,7 +5755,9 @@ function ApprovedCreateContent(props) {
       setAudioReuploadNeeded(Boolean(nextData?.audioSource === 'upload' && hadAudioRef && !restoredUploadUrlForFlag));
       setData((prev) => ({ ...prev, ...nextData, file: null }));
     }
-    setAudioUploadUrl(typeof parsed.audioUploadUrl === 'string' ? parsed.audioUploadUrl.trim() : '');
+    const savedAudioUrl = typeof parsed.audioUploadUrl === 'string' ? parsed.audioUploadUrl.trim() : '';
+    autoTranscribedUrlRef.current = savedAudioUrl;
+    setAudioUploadUrl(savedAudioUrl);
     setAudioUploadPath(typeof parsed.audioUploadPath === 'string' ? parsed.audioUploadPath.trim() : '');
     setBaseSongIds({
       taskId: typeof parsed.baseSongTaskId === 'string' ? parsed.baseSongTaskId : '',
@@ -5752,77 +5767,29 @@ function ApprovedCreateContent(props) {
   };
 
   useEffect(() => {
-    if (!draftKey) return;
-    // Si acabamos de llegar del clonador, NO restaurar el borrador viejo.
-    if (bridgeAppliedRef.current) return;
     try {
-      const prefijo = 'ramber.approved_create_draft_v1.uid_' + safeUserId;
-      const ahora = Date.now();
-      const MAX_EDAD = 48 * 60 * 60 * 1000; // 48 h: más viejo se considera basura
-      const claves = new Set();
-      if (draftKey) claves.add(draftKey);
-      if (legacyDraftKey) claves.add(legacyDraftKey);
-      if (latestDraftKey) claves.add(latestDraftKey);
-      for (let i = 0; i < window.localStorage.length; i++) {
-        const k = window.localStorage.key(i) || '';
-        if (k.indexOf(prefijo) === 0) claves.add(k);
-      }
-      let mejorRaw = null;
-      let mejorFecha = 0;
-      claves.forEach((k) => {
-        try {
-          const valor = window.localStorage.getItem(k);
-          if (!valor) return;
-          const obj = JSON.parse(valor);
-          const t = Number(obj?.savedAt || 0);
-          // Sin fecha válida = borrador viejo/incompleto: no se restaura.
-          if (!(t > 0)) return;
-          if (ahora - t > MAX_EDAD) return;
-          if (t > mejorFecha) { mejorFecha = t; mejorRaw = valor; }
-        } catch {}
-      });
-      const parsed = mejorRaw ? JSON.parse(mejorRaw) : null;
-      applyDraftPayload(parsed);
-    } catch {}
-  }, [draftKey, legacyDraftKey]);
-
-  const recoverOrphanDraft = (key) => {
-    try {
-      if (!key || !draftKey) return;
-      const raw = window.localStorage.getItem(key);
-      if (!raw) {
-        setToast('Ese borrador ya no está disponible.');
-        return;
-      }
-      const parsed = JSON.parse(raw);
-      window.localStorage.setItem(draftKey, raw);
-      try { window.localStorage.removeItem(key); } catch {}
-      applyDraftPayload(parsed);
-      setOrphanDrafts((prev) => prev.filter((item) => item.key !== key));
-      setToast('Recuperé la canción que estaba en esa otra ventana.');
+      if (!draftKey || bridgeAppliedRef.current || prefill?.type === 'cover') return;
+      const draft = readSongDraft(draftKey, latestDraftKey, legacyDraftKey);
+      if (!hasSongDraft(draft)) return;
+      skipRestoredWriteRef.current = true;
+      applyDraftPayload(draft);
+      setShowDraftChoice(true);
     } catch {
-      setToast('No pude recuperar ese borrador.');
+      // El formulario sigue disponible si el navegador bloquea el almacenamiento.
+    } finally {
+      setDraftReady(true);
     }
-  };
+  }, [draftKey, latestDraftKey, legacyDraftKey]);
 
   const resetForNewSong = () => {
     audioRequestVersionRef.current += 1;
-    if (draftKey) {
-      try { window.localStorage.removeItem(draftKey); } catch {}
-    }
-    // También se borra el respaldo "último borrador" y los de otras ventanas:
-    // si no, la canción anterior volvía a aparecer al reabrir o al cambiar de pestaña.
+    autoTranscribedUrlRef.current = '';
+    setShowDraftChoice(false);
     try {
-      if (latestDraftKey) window.localStorage.removeItem(latestDraftKey);
-      if (legacyDraftKey) window.localStorage.removeItem(legacyDraftKey);
-      if (safeUserId) {
-        const prefijo = 'ramber.approved_create_draft_v1.uid_' + safeUserId;
-        const sobran = [];
-        for (let i = 0; i < window.localStorage.length; i++) {
-          const k = window.localStorage.key(i) || '';
-          if (k.indexOf(prefijo) === 0) sobran.push(k);
-        }
-        sobran.forEach((k) => { try { window.localStorage.removeItem(k); } catch {} });
+      if (draftKey) {
+        const emptyDraft = JSON.stringify({ cleared: true, savedAt: Date.now() });
+        window.localStorage.setItem(draftKey, emptyDraft);
+        window.localStorage.setItem(latestDraftKey, emptyDraft);
       }
     } catch {}
     setBaseSongIds({ taskId: '', audioId: '' });
@@ -5847,131 +5814,40 @@ function ApprovedCreateContent(props) {
     setCreditsGate(null);
   };
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-    if (!draftKey) return undefined;
-    const id = window.setTimeout(() => {
-      try {
-        const safeData = { ...data, file: null };
-        const hadAudioReference = Boolean(
-          safeData.audioSource === 'upload' &&
-            (Boolean(data.file) || Boolean(audioUploadUrl) || Boolean(isUploadingAudio) || Boolean(audioUploadError) || Number(uploadProgress || 0) > 0)
-        );
-        const payload = {
-          step,
-          creativity,
-          instruction,
-          audioWeight,
-          data: safeData,
-          hadAudioReference,
-          audioUploadUrl,
-          audioUploadPath,
-          baseSongTaskId: baseSongIds.taskId,
-          baseSongAudioId: baseSongIds.audioId,
-          savedAt: Date.now(),
-        };
-        const rawPayload = JSON.stringify(payload);
-        window.localStorage.setItem(draftKey, rawPayload);
-        if (latestDraftKey) window.localStorage.setItem(latestDraftKey, rawPayload);
-      } catch {}
-    }, 350);
-    return () => window.clearTimeout(id);
-  }, [draftKey, step, creativity, instruction, audioWeight, data, audioUploadUrl, audioUploadPath, baseSongIds]);
+  const snapshotDraft = () => ({
+    step,
+    creativity,
+    instruction,
+    audioWeight,
+    data: { ...data, file: null },
+    hadAudioReference: audioReuploadNeeded || Boolean(data.audioSource === 'upload' &&
+      (data.file || audioUploadUrl || isUploadingAudio || audioUploadError)),
+    audioUploadUrl,
+    audioUploadPath,
+    baseSongTaskId: baseSongIds.taskId,
+    baseSongAudioId: baseSongIds.audioId,
+  });
 
-  // Guarda el borrador ahora mismo (sin esperar los 350 ms del debounce).
-  // Se usa al terminar una generación para no perder letra/audio al navegar.
-  const saveDraftNow = (stepOverride) => {
+  const saveDraftNow = () => {
+    if (!draftKey || !draftReady) return;
+    const draft = snapshotDraft();
+    if (!hasSongDraft(draft)) return;
     try {
-      if (!draftKey) return;
-      const safeData = { ...data, file: null };
-      const payload = {
-        step: typeof stepOverride === "number" ? stepOverride : step,
-        creativity,
-        instruction,
-        audioWeight,
-        data: safeData,
-        hadAudioReference: Boolean(
-          safeData.audioSource === 'upload' &&
-            (Boolean(data.file) || Boolean(audioUploadUrl) || Number(uploadProgress || 0) > 0),
-        ),
-        audioUploadUrl,
-        audioUploadPath,
-        baseSongTaskId: baseSongIds.taskId,
-        baseSongAudioId: baseSongIds.audioId,
-        savedAt: Date.now(),
-      };
-      const rawPayload = JSON.stringify(payload);
-      window.localStorage.setItem(draftKey, rawPayload);
-      if (latestDraftKey) window.localStorage.setItem(latestDraftKey, rawPayload);
+      const raw = JSON.stringify({ ...draft, savedAt: Date.now() });
+      window.localStorage.setItem(draftKey, raw);
+      window.localStorage.setItem(latestDraftKey, raw);
     } catch {}
   };
 
-  // Guardado inmediato al cerrar o cambiar de app (el debounce de 350 ms puede
-  // llegar tarde si la página se recarga sola por una actualización).
   useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-    if (!draftKey) return undefined;
-    const flush = () => {
-      try {
-        const safeData = { ...data, file: null };
-        const payload = {
-          step,
-          creativity,
-          instruction,
-          audioWeight,
-          data: safeData,
-          hadAudioReference: Boolean(
-            safeData.audioSource === 'upload' &&
-              (Boolean(data.file) || Boolean(audioUploadUrl) || Number(uploadProgress || 0) > 0),
-          ),
-          audioUploadUrl,
-          audioUploadPath,
-          baseSongTaskId: baseSongIds.taskId,
-          baseSongAudioId: baseSongIds.audioId,
-          savedAt: Date.now(),
-        };
-        const rawPayload = JSON.stringify(payload);
-        window.localStorage.setItem(draftKey, rawPayload);
-        if (latestDraftKey) window.localStorage.setItem(latestDraftKey, rawPayload);
-      } catch {}
-    };
-    window.addEventListener('pagehide', flush);
-    document.addEventListener('visibilitychange', flush);
-    return () => {
-      flush();
-      window.removeEventListener('pagehide', flush);
-      document.removeEventListener('visibilitychange', flush);
-    };
-  }, [draftKey, latestDraftKey, step, creativity, instruction, audioWeight, data, audioUploadUrl, audioUploadPath, baseSongIds, uploadProgress]);
-
-  // Borradores de otras ventanas o de una pestaña que se cerró. No se borra nada:
-  // solo se ofrecen para recuperarlos cuando esta ventana está vacía.
-  useEffect(() => {
-    if (!draftKey) { setOrphanDrafts([]); return; }
-    try {
-      const prefix = `ramber.approved_create_draft_v1.uid_${safeUserId}.ws_`;
-      const found = [];
-      for (let i = 0; i < window.localStorage.length; i += 1) {
-        const key = window.localStorage.key(i);
-        if (!key || key === draftKey || key.indexOf(prefix) !== 0) continue;
-        try {
-          const parsed = JSON.parse(window.localStorage.getItem(key) || 'null');
-          const d = parsed?.data || {};
-          const meaningful = Number(parsed?.step || 0) > 0
-            || String(d.title || '').trim()
-            || String(d.lyrics || '').trim()
-            || String(d.style || '').trim()
-            || String(d.lyricInstruction || '').trim();
-          if (!meaningful) continue;
-          found.push({ key, savedAt: Number(parsed?.savedAt || 0) || 0 });
-        } catch {}
-      }
-      found.sort((a, b) => b.savedAt - a.savedAt);
-      setOrphanDrafts(found.slice(0, 5));
-    } catch {
-      setOrphanDrafts([]);
+    if (!draftReady) return;
+    if (skipRestoredWriteRef.current) {
+      skipRestoredWriteRef.current = false;
+      return;
     }
-  }, [draftKey, safeUserId]);
+    saveDraftNow();
+  }, [draftReady, draftKey, step, creativity, instruction, audioWeight, data, audioUploadUrl, audioUploadPath,
+      baseSongIds, audioReuploadNeeded, isUploadingAudio, audioUploadError]);
 
   useEffect(() => {
     const previousStep = previousStepRef.current;
@@ -6021,9 +5897,8 @@ function ApprovedCreateContent(props) {
   }, []);
 
   useEffect(() => {
-    if (!prefillNonce) return;
-    if (!prefill) return;
-    if (prefill.type !== 'cover') return;
+    if (!prefillNonce || prefill?.type !== 'cover' || lastPrefillNonceRef.current === prefillNonce) return;
+    lastPrefillNonceRef.current = prefillNonce;
     resetForNewSong();
     const song = prefill.song;
     const rawUrl = (song?.audioUrl || '').toString().trim();
@@ -6065,7 +5940,8 @@ function ApprovedCreateContent(props) {
       lyrics: typeof song?.lyrics === 'string' && song.lyrics.trim() ? song.lyrics : prev.lyrics,
       style: typeof song?.description === 'string' && song.description.trim() ? song.description : prev.style,
     }));
-  }, [prefillNonce, prefill]);
+    onPrefillApplied?.();
+  }, [prefillNonce, prefill, onPrefillApplied]);
 
   const removeSelectedAudio = (options) => {
     const nextAudioSource = typeof options?.nextAudioSource === 'string' ? options.nextAudioSource : 'upload';
@@ -6472,7 +6348,7 @@ function ApprovedCreateContent(props) {
     const hasAudioCover = Boolean(audioUploadUrl);
     if (requiresUploadedAudio && !hasAudioCover) {
       const msg = audioReuploadNeeded
-        ? 'Vuelve a subir tu audio para continuar. Por seguridad no conservamos el audio al restaurar un borrador.'
+        ? 'Vuelve a subir el audio de referencia. La letra y los ajustes de tu canción siguen guardados.'
         : audioUploadError || 'Necesitas subir tu audio antes de generar con audio de referencia.';
       setToast(msg);
       return false;
@@ -6510,6 +6386,7 @@ function ApprovedCreateContent(props) {
       return false;
     }
 
+    saveDraftNow();
     setIsSubmitting(true);
     try {
       const t = await getAccessToken();
@@ -6643,10 +6520,6 @@ function ApprovedCreateContent(props) {
           }
         })();
         clearGenerationSession();
-        // No se limpia el formulario: el audio y la letra se conservan para poder
-        // generar otra version sin volver a subir el audio ni reescribir la letra.
-        saveDraftNow(0);
-        setStep(0);
         if (onGoLibrary) onGoLibrary();
         return true;
       }
@@ -6859,10 +6732,6 @@ function ApprovedCreateContent(props) {
         try { window.localStorage.removeItem(pendingLegacyKey); } catch {}
       } catch {}
       clearGenerationSession();
-      // No se limpia el formulario: el audio y la letra se conservan para poder
-      // generar otra version sin volver a subir el audio ni reescribir la letra.
-      saveDraftNow(0);
-      setStep(0);
       if (onGoLibrary) onGoLibrary();
       return true;
     } catch (e) {
@@ -6926,26 +6795,15 @@ function ApprovedCreateContent(props) {
     [step, data, creativity, instruction, audioWeight, isUploadingAudio, isGeneratingLyrics, isSubmitting, creditsGate, credits, hasPendingTask]
   );
 
-  const hasMeaningfulContent = Boolean(
-    step > 0 ||
-      (data.title || '').toString().trim() ||
-      (data.lyrics || '').toString().trim() ||
-      (data.style || '').toString().trim() ||
-      (data.negative || '').toString().trim() ||
-      (data.lyricInstruction || '').toString().trim() ||
-      data.audioSource !== 'none' ||
-      data.voice !== 'standard' ||
-      data.voiceProfile ||
-      creativity !== 50 ||
-      instruction !== 50 ||
-      audioWeight !== 25
-  );
+  const hasMeaningfulContent = hasSongDraft(snapshotDraft());
+  const draftBusy = isSubmitting || isUploadingAudio || isGeneratingLyrics ||
+    isBoostingStyle || isTranslatingStyle || isTranscribingAudioLyrics;
   const requestResetForNewSong = () => {
-    if (!hasMeaningfulContent) return;
+    if (!hasMeaningfulContent || draftBusy) return;
     if (typeof onShowAlert === 'function') {
       onShowAlert({
         title: '¿Crear otra canción?',
-        message: 'Se borra todo (letra, estilo y el audio subido) para empezar una canción nueva. Si solo quieres cambiar el género, no uses este botón: cambia el estilo y genera otra vez.',
+        message: 'Se limpiará el formulario de Crear. Las canciones que ya generaste seguirán en Mis canciones.',
         tone: 'warning',
         actions: [
           { label: 'Cancelar', kind: 'cancel' },
@@ -6962,15 +6820,26 @@ function ApprovedCreateContent(props) {
       <main className="main-area">
         <Stepper step={step} onStep={setStep} />
         <div className="content-area" ref={contentAreaRef}>
+          {showDraftChoice && hasMeaningfulContent && (
+            <section className="generation-footer-banner" aria-label="Canción guardada" style={{ marginBottom: 16 }}>
+              <div>
+                <strong>Tienes una canción guardada</strong>
+                <span>Continúa con tus ajustes o empieza una canción nueva.</span>
+              </div>
+              <div className="generation-footer-actions">
+                <button type="button" className="generation-link-button" onClick={() => setShowDraftChoice(false)}>
+                  Continuar con la misma
+                </button>
+                <button type="button" className="generation-secondary-button" onClick={requestResetForNewSong} disabled={draftBusy}>
+                  Crear otra canción
+                </button>
+              </div>
+            </section>
+          )}
           {content}
           <footer className="step-footer">
-            {!hasMeaningfulContent && orphanDrafts.length > 0 ? (
-              <button className="back-button" type="button" onClick={() => recoverOrphanDraft(orphanDrafts[0].key)}>
-                Recuperar canción anterior
-              </button>
-            ) : null}
-            {hasMeaningfulContent ? (
-              <button className="back-button reset-button" type="button" onClick={requestResetForNewSong}>
+            {hasMeaningfulContent && !showDraftChoice ? (
+              <button className="back-button reset-button" type="button" onClick={requestResetForNewSong} disabled={draftBusy}>
                 Crear otra canción
               </button>
             ) : null}
@@ -7053,7 +6922,7 @@ export function ApprovedCreatePreview(props) {
   return (
     <div style={{ height: "100%", minHeight: 0, width: "100%" }}>
       <style>{approvedCss}</style>
-      <ApprovedCreateContent {...(props || {})} />
+      <ApprovedCreateContent key={props?.authUserId || ''} {...(props || {})} />
     </div>
   );
 }
