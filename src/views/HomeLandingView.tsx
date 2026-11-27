@@ -42,8 +42,27 @@ export function HomeLandingView() {
 
       <section className="album-shell album-extras" aria-label="Opciones para tus canciones">
         <article><Download aria-hidden="true" /><h2>Descargas ilimitadas</h2><p>Descarga las canciones disponibles en tu biblioteca cuando quieras.</p></article>
-        <article><AudioLines aria-hidden="true" /><h2>Elimina la voz de tus canciones</h2><p>Quédate con la pista instrumental de las canciones compatibles.</p><a href="/biblioteca">Ir a Mis canciones <ArrowRight size={16} aria-hidden="true" /></a></article>
-        <article><Video aria-hidden="true" /><h2>Crea videos para tus redes</h2><p>Convierte tus canciones en videos para compartir en redes sociales.</p><a href="/biblioteca">Elige una canción <ArrowRight size={16} aria-hidden="true" /></a></article>
+        <article><AudioLines aria-hidden="true" /><h2>Elimina la voz de tus canciones</h2><p>Quédate con la pista instrumental de las canciones compatibles.</p></article>
+        <article className="album-social-demo">
+          <div>
+            <Video aria-hidden="true" />
+            <h2>Crea videos para tus redes</h2>
+            <p>Con un clic en «Crear video», convierte tu canción en un video listo para compartir.</p>
+            <ul className="album-social-brands" aria-label="Redes donde puedes compartir tu video">
+              <li><img src="/assets/social/facebook.svg" width="20" height="20" alt="" />Facebook</li>
+              <li><img src="/assets/social/tiktok.svg" width="20" height="20" alt="" />TikTok</li>
+              <li><img src="/assets/social/youtube.svg" width="20" height="20" alt="" />YouTube</li>
+              <li><img src="/assets/social/instagram.svg" width="20" height="20" alt="" />Instagram</li>
+              <li><img src="/assets/social/whatsapp.svg" width="20" height="20" alt="" />WhatsApp</li>
+              <li><img src="/assets/social/threads.svg" width="20" height="20" alt="" />Threads</li>
+              <li><img src="/assets/social/x.svg" width="20" height="20" alt="" />X</li>
+            </ul>
+          </div>
+          <figure>
+            <figcaption>Ejemplo de video musical</figcaption>
+            <video src="/assets/ejemplo-video-redes.mp4" poster="/assets/ejemplo-video-redes.webp" controls playsInline preload="none" aria-label="Ejemplo de video musical de LucIAna Music" />
+          </figure>
+        </article>
       </section>
 
       <section className="album-shell album-bottom"><CloneLink /></section>
