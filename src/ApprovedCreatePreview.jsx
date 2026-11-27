@@ -5596,6 +5596,48 @@ const uploadAudioForVoice = async (token, file) => {
   }
 };
 
+async function accessDraftAudio(key, action, file) {
+  if (!key || typeof indexedDB === 'undefined') return null;
+  const db = await new Promise((resolve, reject) => {
+    const request = indexedDB.open('luciana-create-drafts', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('audio');
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  try {
+    return await new Promise((resolve, reject) => {
+      const transaction = db.transaction('audio', action === 'read' ? 'readonly' : 'readwrite');
+      const store = transaction.objectStore('audio');
+      const request = action === 'read' ? store.get(key)
+        : action === 'save' ? store.put(file, key) : store.delete(key);
+      transaction.oncomplete = () => resolve(request.result);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+async function uploadCreateReference(token, file, onExtract) {
+  const uploaded = await uploadAudioForVoice(token, file);
+  const key = String(uploaded?.key || '').trim();
+  const isVideo = /^video\//i.test(file.type || '') || /\.(mp4|mov|m4v|webm|mkv|avi|flv)$/i.test(file.name || '');
+  if (!isVideo || !key) return { url: String(uploaded?.url || '').trim(), key };
+
+  onExtract?.();
+  const response = await fetch('/api/audio/extract-mp3', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ key }),
+  });
+  const result = await response.json().catch(() => ({}));
+  const url = String(result?.url || '').trim();
+  if (!response.ok || !url) {
+    throw new Error(result?.detail || result?.error || 'No pude quitar el video de ese archivo.');
+  }
+  return { url, key: String(result?.key || '').trim() };
+}
+
 function hasSongContent(draft) {
   return Boolean(
     [draft?.data?.lyrics, draft?.data?.style, draft?.audioUploadUrl, draft?.audioUploadPath]
@@ -5708,6 +5750,15 @@ function ApprovedCreateContent(props) {
   const lastPrefillNonceRef = useRef(null);
   const [audioUploadError, setAudioUploadError] = useState("");
   const audioRequestVersionRef = useRef(0);
+  const audioBackupKeyRef = useRef('');
+  const refreshAudioOnSubmitRef = useRef(false);
+
+  const clearDraftAudio = () => {
+    const key = audioBackupKeyRef.current;
+    audioBackupKeyRef.current = '';
+    refreshAudioOnSubmitRef.current = false;
+    accessDraftAudio(key, 'delete').catch(() => {});
+  };
   const contentAreaRef = useRef(null);
   const previousStepRef = useRef(step);
 
@@ -5763,6 +5814,8 @@ function ApprovedCreateContent(props) {
       setData((prev) => ({ ...prev, ...nextData, file: null }));
     }
     const savedAudioUrl = typeof parsed.audioUploadUrl === 'string' ? parsed.audioUploadUrl.trim() : '';
+    audioBackupKeyRef.current = typeof parsed.audioBackupKey === 'string' ? parsed.audioBackupKey : '';
+    refreshAudioOnSubmitRef.current = Boolean(audioBackupKeyRef.current);
     autoTranscribedUrlRef.current = savedAudioUrl;
     setAudioUploadUrl(savedAudioUrl);
     setAudioUploadPath(typeof parsed.audioUploadPath === 'string' ? parsed.audioUploadPath.trim() : '');
@@ -5791,6 +5844,7 @@ function ApprovedCreateContent(props) {
   const resetForNewSong = () => {
     audioRequestVersionRef.current += 1;
     autoTranscribedUrlRef.current = '';
+    clearDraftAudio();
     setShowDraftChoice(false);
     try {
       if (draftKey) {
@@ -5831,6 +5885,7 @@ function ApprovedCreateContent(props) {
       (data.file || audioUploadUrl || isUploadingAudio || audioUploadError)),
     audioUploadUrl,
     audioUploadPath,
+    audioBackupKey: audioBackupKeyRef.current,
     baseSongTaskId: baseSongIds.taskId,
     baseSongAudioId: baseSongIds.audioId,
   });
@@ -5951,6 +6006,7 @@ function ApprovedCreateContent(props) {
   }, [prefillNonce, prefill, onPrefillApplied]);
 
   const removeSelectedAudio = (options) => {
+    clearDraftAudio();
     const nextAudioSource = typeof options?.nextAudioSource === 'string' ? options.nextAudioSource : 'upload';
     setBaseSongIds({ taskId: '', audioId: '' });
     const nextAudioInputMode = typeof options?.nextAudioInputMode === 'string'
@@ -5996,36 +6052,27 @@ function ApprovedCreateContent(props) {
       }
       if (requestVersion !== audioRequestVersionRef.current) return;
       setUploadProgress(40);
-      const uploaded = await uploadAudioForVoice(t.token, file);
-      if (requestVersion !== audioRequestVersionRef.current) return;
-      let finalUrl = (uploaded?.url || '').toString().trim();
-      let finalKey = (uploaded?.key || '').toString().trim();
-
-      // Si subieron un video, el servidor le quita la imagen y deja solo el audio.
-      const esVideoSubido = (f) => {
-        const tipo = String(f?.type || "").toLowerCase();
-        const nombre = String(f?.name || "").toLowerCase();
-        return tipo.startsWith("video/") || /\.(mp4|mov|m4v|webm|mkv|avi|flv)$/.test(nombre);
-      };
-      if (esVideoSubido(file) && finalKey) {
+      const { url: finalUrl, key: finalKey } = await uploadCreateReference(t.token, file, () => {
         setUploadProgress(70);
         setToast('Quitando el video y dejando el audio…');
-        const conv = await fetch("/api/audio/extract-mp3", {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: "Bearer " + t.token },
-          body: JSON.stringify({ key: finalKey }),
-        });
-        const convOut = await conv.json().catch(() => ({}));
-        if (!conv.ok || !String(convOut?.url || "").trim()) {
-          setAudioUploadError(String(convOut?.detail || convOut?.error || "No pude quitar el video de ese archivo."));
-          setToast(String(convOut?.detail || convOut?.error || "No pude quitar el video de ese archivo."));
-          return false;
-        }
-        finalUrl = String(convOut.url).trim();
-        finalKey = String(convOut.key || "").trim();
-      }
-
+      });
       if (requestVersion !== audioRequestVersionRef.current) return;
+      const previousBackupKey = audioBackupKeyRef.current;
+      const backupKey = draftKey ? `${draftKey}.${crypto.randomUUID()}` : '';
+      let backedUp = false;
+      try {
+        if (backupKey && typeof indexedDB !== 'undefined') {
+          await accessDraftAudio(backupKey, 'save', file);
+          backedUp = true;
+        }
+      } catch {}
+      if (requestVersion !== audioRequestVersionRef.current) {
+        if (backedUp) accessDraftAudio(backupKey, 'delete').catch(() => {});
+        return;
+      }
+      audioBackupKeyRef.current = backedUp ? backupKey : '';
+      refreshAudioOnSubmitRef.current = false;
+      if (previousBackupKey) accessDraftAudio(previousBackupKey, 'delete').catch(() => {});
       setAudioUploadUrl(finalUrl);
       setAudioUploadPath(finalKey);
       setUploadProgress(100);
@@ -6352,7 +6399,9 @@ function ApprovedCreateContent(props) {
     const normalizedSongTitle = (data.title || 'Nueva Canción').toString().trim().slice(0, 100) || 'Nueva Canción';
     const baseLyrics = data.lyrics.trim() ? normalizeLyricsTags(stripTitleFromLyrics(normalizedSongTitle, data.lyrics)) : '';
     const requiresUploadedAudio = data.audioSource === 'upload';
-    const hasAudioCover = Boolean(audioUploadUrl);
+    let referenceUrl = audioUploadUrl;
+    let referencePath = audioUploadPath;
+    const hasAudioCover = Boolean(referenceUrl);
     if (requiresUploadedAudio && !hasAudioCover) {
       const msg = audioReuploadNeeded
         ? 'Vuelve a subir el audio de referencia. La letra y los ajustes de tu canción siguen guardados.'
@@ -6416,6 +6465,21 @@ function ApprovedCreateContent(props) {
       const { provider: reqProvider, model: reqModelCode } = MODEL_PROVIDER_CODE[data.model] || { provider: 'suno', model: 'V6' };
       const modelCode = reqModelCode;
       const isMureka = reqProvider === 'mureka';
+
+      if (!isMureka && hasAudioCover && refreshAudioOnSubmitRef.current) {
+        const savedFile = await accessDraftAudio(audioBackupKeyRef.current, 'read').catch(() => null);
+        if (savedFile) {
+          setToast('Preparando tu audio guardado…');
+          const refreshed = await uploadCreateReference(t.token, savedFile);
+          if (!refreshed.url) throw new Error('No pude preparar tu audio guardado. Intenta generar de nuevo.');
+          referenceUrl = refreshed.url;
+          referencePath = refreshed.key;
+          refreshAudioOnSubmitRef.current = false;
+          autoTranscribedUrlRef.current = referenceUrl;
+          setAudioUploadUrl(referenceUrl);
+          setAudioUploadPath(referencePath);
+        }
+      }
 
       if (isMureka) {
         const hasSelectedVoice = Boolean(data.voice === 'clone' && data.voiceProfile?.voiceId && data.voiceProfile?.source !== 'replicate');
@@ -6545,8 +6609,8 @@ function ApprovedCreateContent(props) {
       };
 
       if (hasAudioCover) {
-        payload.audioUrl = audioUploadUrl || undefined;
-        payload.audioPath = audioUploadPath || undefined;
+        payload.audioUrl = referenceUrl || undefined;
+        payload.audioPath = referencePath || undefined;
         payload.audioAction = 'cover';
       }
 
@@ -6585,7 +6649,7 @@ function ApprovedCreateContent(props) {
       // ---------- Motor propio LucIAna V1 ----------
       // Usa el audio del cliente como muestra de voz y genera una canción nueva.
       if (data.model === 'LucIAna V1') {
-        if (!audioUploadUrl && !audioUploadPath) {
+        if (!referenceUrl && !referencePath) {
           setToast('LucIAna V1 necesita tu voz: sube o graba un audio en el paso 1.');
           return false;
         }
@@ -6594,8 +6658,8 @@ function ApprovedCreateContent(props) {
             method: 'POST',
             headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
             body: JSON.stringify({
-              audioUrl: audioUploadUrl || undefined,
-              audioPath: audioUploadPath || undefined,
+              audioUrl: referenceUrl || undefined,
+              audioPath: referencePath || undefined,
               prompt: String(payload.style || data.style || '').slice(0, 900) || 'pop latino romantico',
               lyrics: String(data.lyrics || ''),
               title: normalizedSongTitle,
@@ -6645,9 +6709,9 @@ function ApprovedCreateContent(props) {
       const submitUrl = hasAudioCover ? '/api/suno/upload-cover' : '/api/suno/generate';
       const submitPayload = hasAudioCover
         ? {
-            uploadUrl: audioUploadUrl,
-            uploadBucket: audioUploadPath ? 'ramber-tunes' : undefined,
-            uploadPath: audioUploadPath || undefined,
+            uploadUrl: referenceUrl,
+            uploadBucket: referencePath ? 'ramber-tunes' : undefined,
+            uploadPath: referencePath || undefined,
             baseTaskId: baseSongIds.taskId || undefined,
             baseAudioId: baseSongIds.audioId || undefined,
             instrumental: false,
