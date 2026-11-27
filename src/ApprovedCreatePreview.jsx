@@ -5596,6 +5596,13 @@ const uploadAudioForVoice = async (token, file) => {
   }
 };
 
+function hasSongContent(draft) {
+  return Boolean(
+    [draft?.data?.lyrics, draft?.data?.style, draft?.audioUploadUrl, draft?.audioUploadPath]
+      .some(value => typeof value === 'string' && value.trim())
+  );
+}
+
 function hasSongDraft(draft) {
   const data = draft?.data;
   return Boolean(data && (
@@ -5773,7 +5780,7 @@ function ApprovedCreateContent(props) {
       if (!hasSongDraft(draft)) return;
       skipRestoredWriteRef.current = true;
       applyDraftPayload(draft);
-      setShowDraftChoice(true);
+      setShowDraftChoice(hasSongContent(draft));
     } catch {
       // El formulario sigue disponible si el navegador bloquea el almacenamiento.
     } finally {
@@ -6795,7 +6802,9 @@ function ApprovedCreateContent(props) {
     [step, data, creativity, instruction, audioWeight, isUploadingAudio, isGeneratingLyrics, isSubmitting, creditsGate, credits, hasPendingTask]
   );
 
-  const hasMeaningfulContent = hasSongDraft(snapshotDraft());
+  const currentDraft = snapshotDraft();
+  const hasMeaningfulContent = hasSongDraft(currentDraft);
+  const showResumeBanner = showDraftChoice && hasSongContent(currentDraft);
   const draftBusy = isSubmitting || isUploadingAudio || isGeneratingLyrics ||
     isBoostingStyle || isTranslatingStyle || isTranscribingAudioLyrics;
   const requestResetForNewSong = () => {
@@ -6820,10 +6829,10 @@ function ApprovedCreateContent(props) {
       <main className="main-area">
         <Stepper step={step} onStep={setStep} />
         <div className="content-area" ref={contentAreaRef}>
-          {showDraftChoice && hasMeaningfulContent && (
-            <section className="generation-footer-banner" aria-label="Canción guardada" style={{ marginBottom: 16 }}>
+          {showResumeBanner && (
+            <section className="generation-footer-banner" aria-label="Borrador guardado" style={{ marginBottom: 16 }}>
               <div>
-                <strong>Tienes una canción guardada</strong>
+                <strong>Tienes un borrador guardado</strong>
                 <span>Continúa con tus ajustes o empieza una canción nueva.</span>
               </div>
               <div className="generation-footer-actions">
@@ -6838,7 +6847,7 @@ function ApprovedCreateContent(props) {
           )}
           {content}
           <footer className="step-footer">
-            {hasMeaningfulContent && !showDraftChoice ? (
+            {hasMeaningfulContent && !showResumeBanner ? (
               <button className="back-button reset-button" type="button" onClick={requestResetForNewSong} disabled={draftBusy}>
                 Crear otra canción
               </button>
