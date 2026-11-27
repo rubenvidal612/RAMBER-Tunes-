@@ -3779,12 +3779,14 @@ export default function App() {
             const toImport: Array<{ key: 'instrumentalUrl' | 'vocalUrl'; label: string; url: string }> = [];
             if (instrumentalUrl) toImport.push({ key: 'instrumentalUrl', label: 'Instrumental (Karaoke)', url: instrumentalUrl });
             if (vocalUrl) toImport.push({ key: 'vocalUrl', label: 'Voz', url: vocalUrl });
+            let guardadas = 0;
+            let primerError = '';
             if (toImport.length > 0) {
               for (const it of toImport) {
                 try {
                   const externalId = `stem_${pending.taskId}_${it.key}`;
                   const finalTitle = `${baseName} - ${it.label}`.slice(0, 120);
-                  await fetch('/api/library/import-audio', {
+                  const resp = await fetch('/api/library/import-audio', {
                     method: 'POST',
                     headers: { 'content-type': 'application/json', authorization: `Bearer ${t.token}` },
                     body: JSON.stringify({
@@ -3795,16 +3797,37 @@ export default function App() {
                       externalId,
                       sunoTaskId: pending.taskId,
                     }),
-                  }).catch(() => null as any);
-                } catch {
+                  });
+                  const outImp = await resp.json().catch(() => ({}));
+                  if (resp.ok) {
+                    guardadas += 1;
+                  } else if (!primerError) {
+                    primerError = String(outImp?.detail || outImp?.error || ('HTTP ' + resp.status)).slice(0, 300);
+                  }
+                } catch (e) {
+                  if (!primerError) primerError = (e instanceof Error ? e.message : String(e)).slice(0, 300);
                 }
               }
-              await refreshLibrary();
             }
+
+            // Si no se guardó ninguna pista, NO se borra la tarea: se avisa el motivo real.
+            if (toImport.length > 0 && guardadas === 0) {
+              bumpTaskError(pending.taskId, `No pude guardar el karaoke en tu Biblioteca. ${primerError}`.trim());
+              showToast(`No pude guardar el karaoke en tu Biblioteca. ${primerError}`.trim());
+              return;
+            }
+
+            if (guardadas > 0) await refreshLibrary();
             const list = migrateLegacyIfNeeded();
             const rest = Array.isArray(list) ? removePendingTask(list, pending.taskId) : [];
             writeList(rest);
-            showToast(toImport.length > 0 ? `Listo: se guardaron ${toImport.length} pistas en tu Biblioteca.` : kind === 'split_stem' ? 'Listo: Stems listos para descargar.' : 'Listo: Karaoke listo para descargar.');
+            showToast(
+              guardadas > 0
+                ? `Listo: se guardaron ${guardadas} ${guardadas === 1 ? 'pista' : 'pistas'} en tu Biblioteca.`
+                : kind === 'split_stem'
+                  ? 'Listo: Stems listos para descargar.'
+                  : 'Listo: Karaoke listo para descargar.',
+            );
             return;
           }
 
