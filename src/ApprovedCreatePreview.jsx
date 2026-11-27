@@ -3597,7 +3597,9 @@ function StartStep({ data, setData, setToast, handlers }) {
     // Suno solo acepta MP3, asi que cualquier otro formato se convierte aqui mismo,
     // sin mandar al usuario a una pagina externa con anuncios.
     let readyFile = file;
-    if (!isAlreadyMp3(file)) {
+    // Un video no se puede convertir en el navegador: se sube tal cual y el servidor extrae el audio.
+    const esVideoElegido = /^video\//i.test(String(file?.type || '')) || /\.(mp4|mov|m4v|webm|mkv|avi|flv)$/i.test(String(file?.name || ''));
+    if (!esVideoElegido && !isAlreadyMp3(file)) {
       try {
         setConvertingAudio(true);
         setToast('Convirtiendo tu audio a MP3…');
@@ -3740,7 +3742,7 @@ function StartStep({ data, setData, setToast, handlers }) {
               <span className="radio" />
               <input
                 type="file"
-                accept="audio/*,.mp3,.wav,.m4a,.ogg,.opus,.flac,.aac"
+                accept="audio/*,video/mp4,video/quicktime,video/webm,video/x-matroska,.mp3,.wav,.m4a,.ogg,.opus,.flac,.aac,.mp4,.mov,.m4v,.webm,.mkv,.avi"
                 ref={uploadInputRef}
                 onClick={() => {
                   stopSingingCapture({ discardTake: true, preservePreview: false });
@@ -4759,7 +4761,7 @@ function VoiceStep({ data, setData, creativity, instruction, audioWeight, setToa
               </span>
               <input
                 type="file"
-                accept="audio/*,.mp3,.wav,.m4a,.ogg,.opus,.flac,.aac"
+                accept="audio/*,video/mp4,video/quicktime,video/webm,video/x-matroska,.mp3,.wav,.m4a,.ogg,.opus,.flac,.aac,.mp4,.mov,.m4v,.webm,.mkv,.avi"
                 onChange={async (e) => {
                   const file = e.target.files[0];
                   if (!file) return;
@@ -6113,8 +6115,36 @@ function ApprovedCreateContent(props) {
       setUploadProgress(40);
       const uploaded = await uploadAudioForVoice(t.token, file);
       if (requestVersion !== audioRequestVersionRef.current) return;
-      setAudioUploadUrl((uploaded?.url || '').toString().trim());
-      setAudioUploadPath((uploaded?.key || '').toString().trim());
+      let finalUrl = (uploaded?.url || '').toString().trim();
+      let finalKey = (uploaded?.key || '').toString().trim();
+
+      // Si subieron un video, el servidor le quita la imagen y deja solo el audio.
+      const esVideoSubido = (f) => {
+        const tipo = String(f?.type || "").toLowerCase();
+        const nombre = String(f?.name || "").toLowerCase();
+        return tipo.startsWith("video/") || /\.(mp4|mov|m4v|webm|mkv|avi|flv)$/.test(nombre);
+      };
+      if (esVideoSubido(file) && finalKey) {
+        setUploadProgress(70);
+        setToast('Quitando el video y dejando el audio…');
+        const conv = await fetch("/api/audio/extract-mp3", {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: "Bearer " + t.token },
+          body: JSON.stringify({ key: finalKey }),
+        });
+        const convOut = await conv.json().catch(() => ({}));
+        if (!conv.ok || !String(convOut?.url || "").trim()) {
+          setAudioUploadError(String(convOut?.detail || convOut?.error || "No pude quitar el video de ese archivo."));
+          setToast(String(convOut?.detail || convOut?.error || "No pude quitar el video de ese archivo."));
+          return false;
+        }
+        finalUrl = String(convOut.url).trim();
+        finalKey = String(convOut.key || "").trim();
+      }
+
+      if (requestVersion !== audioRequestVersionRef.current) return;
+      setAudioUploadUrl(finalUrl);
+      setAudioUploadPath(finalKey);
       setUploadProgress(100);
       setAudioUploadError('');
       setAudioReuploadNeeded(false);
@@ -6336,7 +6366,10 @@ function ApprovedCreateContent(props) {
         return '';
       };
       const byName = (data?.file?.name || '').toString().trim().toLowerCase();
-      const mimeType = ((data?.file?.type || '').toString().trim() || (byName.endsWith('.mp3') ? 'audio/mpeg' : '') || guessMimeType(audioUploadUrl)).trim();
+      const tipoDeclarado = (data?.file?.type || '').toString().trim();
+      // Si subieron un video, el audio real ya quedó en MP3: no mandar mimeType de video.
+      const tipoSeguro = /^video\//i.test(tipoDeclarado) ? 'audio/mpeg' : tipoDeclarado;
+      const mimeType = (tipoSeguro || (byName.endsWith('.mp3') ? 'audio/mpeg' : '') || guessMimeType(audioUploadUrl)).trim();
 
       controller = new AbortController();
       timeoutTimer = window.setTimeout(() => {
