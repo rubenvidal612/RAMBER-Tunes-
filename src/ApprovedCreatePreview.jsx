@@ -700,6 +700,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     start: 0,
     end: 10,
   });
+  const sourceUploadBusyRef = useRef(false);
   const [sourceUpload, setSourceUpload] = useState({ url: "", key: "", loading: false, error: "" });
   const [verifyUpload, setVerifyUpload] = useState({ clientAttemptId: "", url: "", key: "", loading: false, error: "" });
   const [validation, setValidation] = useState({
@@ -1440,133 +1441,59 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     }
   };
 
-  const esArchivoDeVideo = (f) => {
-    const tipo = String(f?.type || "").toLowerCase();
-    const nombre = String(f?.name || "").toLowerCase();
-    return tipo.startsWith("video/") || /\.(mp4|mov|m4v|webm|mkv|avi|flv)$/.test(nombre);
-  };
+  const acceptSourceAudio = async (file) => {
+    if (!file || sourceUploadBusyRef.current) return;
+    sourceUploadBusyRef.current = true;
+    const requestId = ++sourceUploadReqRef.current;
+    setSaveError("");
+    setSourceUpload({ url: "", key: "", loading: true, error: "" });
 
-  const acceptMp3 = async (file, field) => {
-    if (!file) return;
-    // Video: el navegador no puede convertirlo, así que se sube y el servidor le quita el video.
-    if (field === "sourceAudio" && esArchivoDeVideo(file)) {
-      setSaveError("");
-      setToast("Quitando el video y dejando el audio…");
-      const subido = await uploadWizardAudio(file, "source");
-      if (!subido?.key) return;
-      try {
-        const t = await getAccessToken();
-        if (!t.ok) { setToast(t.error || "No se pudo iniciar sesión."); return; }
-        setToast("Convirtiendo el video a MP3…");
-        const r = await fetch("/api/audio/extract-mp3", {
-          method: "POST",
-          headers: { "content-type": "application/json", authorization: "Bearer " + t.token },
-          body: JSON.stringify({ key: subido.key }),
-        });
-        const out = await r.json().catch(() => ({}));
-        const url = String(out?.url || "").trim();
-        const key = String(out?.key || "").trim();
-        if (!r.ok || !url) {
-          setToast(String(out?.detail || out?.error || "No pude quitar el video de ese archivo."));
-          return;
-        }
-        setSourceUpload({ url, key, loading: false, error: "" });
-        const audio = new Audio(url);
-        audio.addEventListener(
-          "loadedmetadata",
-          () => {
-            const duration = Math.max(1, Math.floor(audio.duration));
-            if (duration < MINIMO_SEGUNDOS) {
-              setSaveError("Tu audio dura " + formatearDuracion(duration) + ". Necesitamos al menos 20 segundos para reconocer tu voz.");
-              return;
-            }
-            setProfile((current) => ({ ...current, sourceAudio: file, audioDuration: duration, start: 0, end: duration }));
-            setToast("Audio listo. Ya puedes validar tu voz.");
-          },
-          { once: true },
-        );
-        audio.addEventListener(
-          "error",
-          () => {
-            setProfile((current) => ({ ...current, sourceAudio: file, audioDuration: 420, start: 0, end: 420 }));
-            setToast("Convertí el video a audio. Ya puedes validar tu voz.");
-          },
-          { once: true },
-        );
-      } catch (e) {
-        setToast(e instanceof Error ? e.message : "No pude convertir el video a audio.");
-      }
-      return;
-    }
-    if (!isAlreadyMp3(file)) {
-      // Suno solo acepta MP3: se convierte aqui mismo en vez de mandar a una pagina externa.
-      try {
-        setToast("Convirtiendo tu audio a MP3…");
-        const converted = await convertAudioFileToMp3(file);
-        return acceptMp3(converted, field);
-      } catch (err) {
-        const detail = err instanceof Error ? err.message : String(err || '');
-        try {
-          console.error('[clonador] no pude convertir el audio a MP3', err, {
-            name: file?.name,
-            type: file?.type,
-            size: file?.size,
-          });
-        } catch {}
-        setToast(`No pude convertir ese audio a MP3. ${detail}`.trim());
-        return;
-      }
-    }
-    if (field !== "sourceAudio") {
-      setProfile((current) => ({ ...current, [field]: file }));
-      uploadWizardAudio(file, "verify").catch(() => {});
-      return;
-    }
-    let objectUrl = "";
+    const readDuration = (url) => new Promise((resolve) => {
+      const audio = new Audio();
+      const finish = (duration) => {
+        window.clearTimeout(timer);
+        audio.onloadedmetadata = null;
+        audio.onerror = null;
+        audio.removeAttribute("src");
+        resolve(duration);
+      };
+      const timer = window.setTimeout(() => finish(420), 8000);
+      audio.preload = "metadata";
+      audio.onloadedmetadata = () => finish(Number.isFinite(audio.duration) ? Math.max(1, Math.floor(audio.duration)) : 420);
+      audio.onerror = () => finish(420);
+      audio.src = url;
+    });
+
+    let localUrl = "";
     try {
-      objectUrl = URL.createObjectURL(file);
-    } catch {
-      uploadWizardAudio(file, "source").catch(() => {});
-      return;
+      const isVideo = /^video\//i.test(file.type || "") || /\.(mp4|mov|m4v|webm|mkv|avi|flv)$/i.test(file.name || "");
+      const audioFile = isVideo || isAlreadyMp3(file) ? file : await convertAudioFileToMp3(file);
+      localUrl = URL.createObjectURL(audioFile);
+      const duration = await readDuration(localUrl);
+      if (sourceUploadReqRef.current !== requestId) return;
+      if (duration < MINIMO_SEGUNDOS) {
+        throw new Error("Tu audio dura " + formatearDuracion(duration) + ". Necesitamos al menos 20 segundos para reconocer tu voz.");
+      }
+      if (!isVideo && duration > MAXIMO_SEGUNDOS) {
+        throw new Error("Tu audio dura " + formatearDuracion(duration) + ". El máximo es 6 minutos.");
+      }
+      const session = await getAccessToken();
+      if (!session.ok) throw new Error(session.error || "No se pudo iniciar sesión.");
+      const { url, key } = await uploadCreateReference(session.token, audioFile);
+      if (sourceUploadReqRef.current !== requestId) return;
+      if (!url) throw new Error("No recibí la URL final del audio.");
+      setProfile((current) => ({
+        ...current, sourceAudio: audioFile, audioDuration: duration, start: 0, end: duration,
+      }));
+      setSourceUpload({ url, key, loading: false, error: "" });
+    } catch (error) {
+      if (sourceUploadReqRef.current !== requestId) return;
+      const message = error instanceof Error ? error.message : "No se pudo subir el audio.";
+      setSourceUpload({ url: "", key: "", loading: false, error: message });
+    } finally {
+      sourceUploadBusyRef.current = false;
+      if (localUrl) URL.revokeObjectURL(localUrl);
     }
-    const audio = new Audio(objectUrl);
-    audio.addEventListener(
-      "loadedmetadata",
-      () => {
-        const duration = Math.max(1, Math.floor(audio.duration));
-        if (duration < MINIMO_SEGUNDOS) {
-          setSaveError("Tu grabación dura " + formatearDuracion(duration) + ". Necesitamos al menos 20 segundos para reconocer tu voz.");
-          try { URL.revokeObjectURL(objectUrl); } catch {}
-          return;
-        }
-        if (duration > MAXIMO_SEGUNDOS) {
-          setSaveError("Tu grabación dura " + formatearDuracion(duration) + ". El máximo es 6 minutos.");
-          try { URL.revokeObjectURL(objectUrl); } catch {}
-          return;
-        }
-        setProfile((current) => ({
-          ...current,
-          sourceAudio: file,
-          audioDuration: duration,
-          start: 0,
-          // Start with the complete upload selected. The user can still narrow
-          // the range manually with the two timeline controls.
-          end: duration,
-        }));
-        try { URL.revokeObjectURL(objectUrl); } catch {}
-        uploadWizardAudio(file, "source").catch(() => {});
-      },
-      { once: true },
-    );
-    audio.addEventListener(
-      "error",
-      () => {
-        try { URL.revokeObjectURL(objectUrl); } catch {}
-        setProfile((current) => ({ ...current, sourceAudio: file, audioDuration: 420, start: 0, end: 420 }));
-        uploadWizardAudio(file, "source").catch(() => {});
-      },
-      { once: true },
-    );
   };
 
   const makeClientAttemptId = () => `${Date.now()}_${Math.random().toString(16).slice(2)}`;
@@ -2557,7 +2484,8 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
     if (phraseRecording.recording || phraseCountdown.active) return "grabando";
     if (validation.phrase && verificationReady) return "frase";
     if (validation.phrase && !verificationReady) return "frase";
-    if (validation.loading || sourceUpload.loading || phraseCountdown.active) return "preparando";
+    if (sourceUpload.loading) return "subiendo";
+    if (!mensajeAmable && (validation.loading || sourceUpload.url)) return "preparando";
     return "inicio";
   })();
 
@@ -2636,7 +2564,7 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
                 Solo tu voz, sin instrumental ni otras personas. Este mismo audio se usa para tu cover, así no grabas dos veces.
               </span>
               <input type="file" accept="audio/*,video/mp4,video/quicktime,video/webm,video/x-matroska,.mp4,.mov,.m4v,.webm,.mkv,.avi" style={{ display: "none" }}
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) acceptMp3(f, "sourceAudio"); }} />
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) void acceptSourceAudio(f); }} />
             </label>
             <div style={{ textAlign: "center", color: "#6b7686", fontSize: 11, marginTop: 6 }}>o, si no tienes el archivo a mano</div>
             <button type="button" style={botonSecundario} onClick={() => { startSourceRecording().catch(() => {}); }}>
@@ -2649,6 +2577,14 @@ function CloneVoiceWizard({ onClose, onComplete, setToast, onShowAlert }) {
               </div>
             ) : null}
           </>
+        ) : null}
+
+        {estado === "subiendo" ? (
+          <div role="status" style={{ textAlign: "center", padding: "12px 0" }}>
+            {puntos}
+            <strong style={{ display: "block", marginTop: 10, fontSize: 18 }}>Subiendo tu audio…</strong>
+            <p style={{ margin: "6px 0 0", color: "#aeb8cc" }}>Ya recibimos tu archivo. Espera mientras lo preparamos.</p>
+          </div>
         ) : null}
 
         {estado === "preparando" ? (
