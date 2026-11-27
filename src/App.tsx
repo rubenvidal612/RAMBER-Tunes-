@@ -3899,8 +3899,20 @@ export default function App() {
             } catch {}
             showToast('La voz seleccionada expiró. Entra a “Clonador” y elige otra voz (o vuelve a crearla).');
           } else if (String(pending.kind || '').toLowerCase() === 'separate_vocal' || String(pending.kind || '').toLowerCase() === 'split_stem') {
-            // Se muestra el motivo real que dio el proveedor (antes se ocultaba).
-            const motivo = raw && !/^error en la generaci/i.test(raw) ? ' Motivo: ' + raw.slice(0, 220) : '';
+            // Se muestra el motivo real, traducido cuando es un caso conocido.
+            const traducirMotivo = (texto) => {
+              const t = texto.toLowerCase();
+              if (t.includes('matches an existing recording') || (t.includes('existing') && t.includes('catalog'))) {
+                return 'Suno detectó que este audio es una grabación que ya existe en su catálogo (una canción comercial). Por derechos de autor no permite separarle la voz. Funciona con canciones creadas aquí, no con audios importados.';
+              }
+              if (t.includes('not supported') || t.includes('unsupported') || t.includes('invalid audio')) {
+                return 'Ese audio no se puede separar. Funciona con canciones creadas aquí (no con audios importados o subidos).';
+              }
+              if (t.includes('expired') && !t.includes('voice')) return 'La canción es muy vieja para separar la voz.';
+              return texto;
+            };
+            const motivoTraducido = raw ? traducirMotivo(raw) : '';
+            const motivo = motivoTraducido && !/^error en la generaci/i.test(motivoTraducido) ? ' ' + motivoTraducido.slice(0, 320) : '';
             showToast(`No se pudo quitar la voz esta vez.${motivo} Te devolvimos el crédito; puedes intentarlo de nuevo.`);
           } else {
             showToast(raw || 'Error en la generación');
