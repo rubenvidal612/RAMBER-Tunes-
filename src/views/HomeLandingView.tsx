@@ -11,8 +11,6 @@ import {
   Instagram,
   Mic2,
   Music2,
-  Pause,
-  Play,
   RefreshCcw,
   SlidersHorizontal,
   Sparkles,
@@ -38,54 +36,46 @@ const tools = [
   { icon: FileAudio2, tone: 'blue', title: 'WAV\nprofesional', text: 'Descarga tu musica en formato WAV de alta calidad.', action: 'Convertir a WAV', image: '/assets/tool-wav-audio.png', imageAlt: 'Equipo profesional de audio de alta resolucion' },
 ];
 
-const demos = [
-  { icon: Mic2, title: 'Clonacion de voz', before: 'Voz original', after: 'Voz clonada', tone: 'purple', caption: 'Escucha como replicamos tu voz con increible precision.' },
-  { icon: Music2, title: 'Cover / Nueva version', before: 'Version original', after: 'Nueva version', tone: 'pink', caption: 'Transforma cualquier cancion en una nueva interpretacion unica.' },
-  { icon: AudioLines, title: 'Masterizacion', before: 'Antes', after: 'Masterizado', tone: 'blue', caption: 'Mejoramos el sonido para que tu musica suene profesional y potente.' },
-];
-
-function WaveLine({ tone }: { tone: string }) {
-  return (
-    <span className={`landing-wave-line is-${tone}`} aria-hidden="true">
-      {Array.from({ length: 7 }, (_, index) => <AudioLines key={index} size={22} strokeWidth={1.6} />)}
-    </span>
-  );
-}
-
-function DemoCard({ demo, playing, onToggle }: { demo: typeof demos[number]; playing: string; onToggle: (id: string) => void }) {
-  const Icon = demo.icon;
-  return (
-    <article className={`landing-demo is-${demo.tone}`}>
-      <header><Icon size={18} /><strong>{demo.title}</strong></header>
-      {[demo.before, demo.after].map((label, index) => {
-        const id = `${demo.title}-${label}`;
-        const active = playing === id;
-        return (
-          <button type="button" key={label} className="landing-demo-row" onClick={() => onToggle(id)}>
-            <span className="landing-demo-dot">{index + 1}</span>
-            <span className="landing-demo-info"><strong>{label}</strong><span><i>{active ? <Pause size={12} /> : <Play size={12} fill="currentColor" />}</i><WaveLine tone={index ? demo.tone : 'muted'} /><small>{demo.title === 'Clonacion de voz' ? '00:30' : '00:45'}</small></span></span>
-          </button>
-        );
-      })}
-      <p>{demo.caption}</p>
-    </article>
-  );
-}
-
 export function HomeLandingView({ onGoStudio }: HomeLandingViewProps) {
-  const [playing, setPlaying] = React.useState('');
-  const toggleDemo = (id: string) => setPlaying((current) => current === id ? '' : id);
-
   return (
     <div className="landing-showcase">
-      <section className="landing-intro">
-        <img className="landing-intro-photo" src="/assets/landing-producer-studio.png" alt="Productor creando musica en un estudio con iluminacion neon" />
-        <div className="landing-intro-shade" />
-        <div className="landing-shell landing-intro-copy">
-          <h1>LucIAna Music | Canciones, Covers y MP3 con IA</h1>
-          <p>Crea canciones completas con IA, covers y pistas personalizadas. Escucha y descarga tu MP3 en alta calidad al instante.</p>
+      <section className="music-home-hero" aria-labelledby="music-home-title">
+        <div className="music-home-hero-inner">
+          <img src="/assets/tool-clone-voice.png" alt="" className="music-home-microphone" fetchPriority="high" />
+          <div className="music-home-copy">
+            <h1 id="music-home-title">Crea una canción que suene a ti</h1>
+            <p>Convierte tu idea o letra en una canción completa.</p>
+            <a href="/crear" className="music-home-button">Crear mi canción <ArrowRight aria-hidden="true" size={19} /></a>
+          </div>
         </div>
+      </section>
 
+      <section className="music-home-discover landing-shell" aria-label="Descubre el estudio">
+        <div className="music-home-voice">
+          <span className="music-home-wave" aria-hidden="true"><AudioLines size={44} strokeWidth={1.35} /></span>
+          <h2>Escucha tu voz en una canción</h2>
+          <p>Clona tu voz y úsala para interpretar tus propias canciones.</p>
+          <a className="music-home-button music-home-button-outline" href="/clonador">Probar con mi voz <ArrowRight aria-hidden="true" size={18} /></a>
+        </div>
+        <div className="music-home-genres">
+          <h2>Explora más géneros</h2>
+          <ul>
+            {[{name: 'Regional mexicano', image: '/assets/landing-producer-studio.png'},
+              {name: 'Cumbia', image: '/assets/tool-cover-version.png'},
+              {name: 'Balada', image: '/assets/tool-create-music.png'}].map(({ name, image }) => (
+              <li key={name}>
+                <a href="/crear" className="music-home-genre" aria-label={`Abrir el estudio para crear ${name.toLowerCase()}`}>
+                  <img src={image} alt="" loading="lazy" />
+                  <span>{name}</span>
+                  <ArrowRight aria-hidden="true" size={17} />
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+      <section className="landing-intro">
+        <div className="landing-shell landing-section-title music-home-tools-title"><h2>Herramientas para tu música</h2></div>
         <div className="landing-shell landing-tools-grid">
           {tools.map(({ icon: Icon, ...tool }) => (
             <article className={`landing-tool-card is-${tool.tone}`} key={tool.title}>
@@ -97,14 +87,6 @@ export function HomeLandingView({ onGoStudio }: HomeLandingViewProps) {
             </article>
           ))}
         </div>
-      </section>
-
-      <section className="landing-shell landing-difference">
-        <div className="landing-section-title"><h2>Escucha la diferencia: <em>antes y despues</em></h2><p>Ejemplos reales creados con LucIAna Music</p></div>
-        <div className="landing-demo-grid">
-          {demos.map((demo) => <DemoCard key={demo.title} demo={demo} playing={playing} onToggle={toggleDemo} />)}
-        </div>
-        <button type="button" className="landing-outline-button"><Headphones size={15} />Escucha mas ejemplos<ArrowRight size={15} /></button>
       </section>
 
       <section className="landing-shell landing-technology">
