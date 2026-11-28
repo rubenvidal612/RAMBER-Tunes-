@@ -225,17 +225,6 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     };
   }, [mobileHeaderMenuOpen]);
 
-  const makeFallbackCoverSvgUrl = (seed: string) => {
-    const s = (seed || 'cancion').toString().slice(0, 80);
-    let h = 0;
-    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-    const hue1 = h % 360;
-    const hue2 = (hue1 + 55) % 360;
-    const label = (seed || 'Canción').toString().trim().slice(0, 22);
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue1} 85% 55%)"/><stop offset="1" stop-color="hsl(${hue2} 85% 45%)"/></linearGradient></defs><rect width="512" height="512" rx="56" fill="url(#g)"/><rect width="512" height="512" rx="56" fill="rgba(0,0,0,0.28)"/><text x="256" y="290" text-anchor="middle" font-family="system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="220" font-weight="300" fill="rgba(255,255,255,0.92)">L</text><text x="40" y="468" font-family="system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="42" font-weight="800" fill="rgba(255,255,255,0.92)">${label.replaceAll('&', 'y').replaceAll('<', '').replaceAll('>', '')}</text></svg>`;
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-  };
-
   const loadDurationFromUrl = (url: string) =>
     new Promise<number | null>((resolve) => {
       const u = (url || '').toString().trim();
@@ -4262,6 +4251,17 @@ async function encodeTrimBufferToMp3(buffer: AudioBuffer, kbps = 192): Promise<B
   if (end && end.length > 0) chunks.push(new Uint8Array(end));
   return new Blob(chunks, { type: 'audio/mpeg' });
 }
+
+const makeFallbackCoverSvgUrl = (seed: string) => {
+  const s = (seed || 'cancion').toString().slice(0, 80);
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  const hue1 = h % 360;
+  const hue2 = (hue1 + 55) % 360;
+  const label = (seed || 'Canción').toString().trim().slice(0, 22);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue1} 85% 55%)"/><stop offset="1" stop-color="hsl(${hue2} 85% 45%)"/></linearGradient></defs><rect width="512" height="512" rx="56" fill="url(#g)"/><rect width="512" height="512" rx="56" fill="rgba(0,0,0,0.28)"/><text x="256" y="290" text-anchor="middle" font-family="system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="220" font-weight="300" fill="rgba(255,255,255,0.92)">L</text><text x="40" y="468" font-family="system-ui, -apple-system, Segoe UI, Roboto, Arial" font-size="42" font-weight="800" fill="rgba(255,255,255,0.92)">${label.replaceAll('&', 'y').replaceAll('<', '').replaceAll('>', '')}</text></svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
 
 function SongOptionsSheet({
   song,
