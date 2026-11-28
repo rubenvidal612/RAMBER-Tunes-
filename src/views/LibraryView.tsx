@@ -6365,35 +6365,63 @@ function SongOptionsSheet({
     const statusLabel = song.audioUrl ? (song.isCover ? 'Cover' : 'Completa') : 'En producción';
     const visibilityLabel = song.isPublic ? 'Público' : 'Privado';
     sheet = (
-      <div className="fixed inset-0 z-[2147483647] flex items-end lg:items-center justify-center bg-black/60" style={{ zIndex: 2147483647 }}>
+      <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/65 p-3 sm:p-6" style={{ zIndex: 2147483647 }}>
         <button className="absolute inset-0 w-full h-full" onClick={onClose} aria-label="Cerrar" />
-        <div className="relative w-full lg:max-w-[980px] bg-[#0b0f16] border border-white/10 rounded-t-3xl lg:rounded-3xl overflow-hidden shadow-[0_-20px_60px_rgba(0,0,0,0.6)] max-h-[92vh] flex flex-col">
-          <div className="flex justify-center py-3 shrink-0 lg:hidden">
-            <div className="w-12 h-1 bg-white/20 rounded-full" />
-          </div>
-
-          <div className="flex-1 overflow-y-auto overscroll-contain">
-            <div className="shrink-0 border-b border-white/10 px-5 pb-4 pt-2 lg:pt-5">
+        <div className="relative w-full max-w-[640px] bg-[#131526] border border-violet-400/45 rounded-3xl overflow-hidden shadow-2xl shadow-black/60 max-h-[90dvh] flex flex-col">
+            <div className="shrink-0 border-b border-white/10 px-4 py-4 sm:px-5">
               <div className="flex items-start gap-4">
-                <div className="w-16 h-16 lg:w-20 lg:h-20 rounded-2xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
+                <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
                   <img src={coverSrc} onError={() => onCoverError?.()} alt="Cover" className="w-full h-full object-cover" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-white font-extrabold text-lg lg:text-xl truncate">{song.title || 'Pista sin título'}</div>
+                  <div className="text-white font-extrabold text-lg leading-snug break-words">{song.title || 'Pista sin título'}</div>
                   {genderLabel ? <div className="mt-1 text-slate-300 text-sm truncate">{genderLabel}</div> : null}
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-2">
                     <span className="shrink-0 bg-emerald-500/20 text-emerald-200 text-[10px] font-extrabold px-2 py-0.5 rounded-full">{statusLabel}</span>
                     <span className="shrink-0 bg-white/10 text-slate-200 text-[10px] font-bold px-2 py-0.5 rounded-full">{modelLabel}</span>
                     <span className="shrink-0 bg-white/10 text-slate-200 text-[10px] font-bold px-2 py-0.5 rounded-full">{visibilityLabel}</span>
                   </div>
                 </div>
-                <button className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 hover:bg-white/10 shrink-0" onClick={onClose} type="button">
+                <button className="w-10 h-10 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-slate-300 hover:bg-white/10 shrink-0" onClick={onClose} type="button" aria-label="Cerrar opciones de canción">
                   ✕
                 </button>
               </div>
             </div>
 
-            <div className="px-5 pb-6 pt-4">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 pb-5 pt-4 sm:px-5">
+            {!isDeleted && <>
+              <div className="grid gap-2 md:grid-cols-3">
+                <button type="button" disabled={isBusy} onClick={download}
+                  className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-slate-500/50 bg-slate-700/60 px-3 py-3 font-bold text-white hover:bg-slate-700 disabled:opacity-50 md:min-h-24 md:flex-col">
+                  {downloadsAllowed === false ? <Lock className="size-5 text-amber-300" /> : <Download className="size-5" />} Descargar MP3
+                </button>
+                <button type="button" disabled={isBusy} onClick={() => openMp4Modal().catch(() => {})}
+                  className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-violet-400/50 bg-violet-700 px-3 py-3 font-bold text-white hover:bg-violet-600 disabled:opacity-50 md:min-h-24 md:flex-col">
+                  <Video className="size-5" /> Crear video
+                </button>
+                <button type="button" disabled={isBusy || isMureka} onClick={() => separateStems('separate_vocal').catch(() => {})}
+                  className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-teal-400/50 bg-teal-800 px-3 py-3 font-bold text-white hover:bg-teal-700 disabled:opacity-50 md:min-h-24 md:flex-col">
+                  <AudioLines className="size-5" /> Karaoke sin voz
+                </button>
+              </div>
+              <div className="mt-3 grid grid-cols-3 divide-x divide-white/10">
+                {[
+                  { Icon: FileText, label: 'Letra', action: () => setShowLyrics(true) },
+                  { Icon: Share2, label: 'Compartir enlace', action: share },
+                  { Icon: Pencil, label: 'Editar nombre', action: () => setShowEditTitle(true) },
+                ].map(({ Icon, label, action }) => (
+                  <button key={label} type="button" disabled={isBusy} onClick={action}
+                    className="flex min-h-14 flex-col items-center justify-center gap-1 px-1 py-2 text-center text-xs font-semibold text-slate-100 hover:bg-white/5 disabled:opacity-50 sm:text-sm">
+                    <Icon className="size-4 text-violet-200" />{label}
+                  </button>
+                ))}
+              </div>
+            </>}
+            <details open={isDeleted || undefined} className="group mt-3 rounded-xl border border-white/10 bg-white/[0.025]">
+              {!isDeleted && <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between px-3 font-bold text-slate-100">
+                Más herramientas <ChevronDown className="size-4 group-open:rotate-180" />
+              </summary>}
+              <div className="px-3 pb-4 pt-1">
               <div className="lg:hidden">
                 {isDeleted ? (
                   <div className="space-y-3">
@@ -6442,27 +6470,9 @@ function SongOptionsSheet({
                     <div className="pt-2">
                       <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 font-black">Editar y administrar</div>
                       <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] overflow-hidden">
-                        <button className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-white/[0.05] transition-colors" onClick={() => setShowEditTitle(true)} disabled={isBusy}>
-                          <div className="flex items-center gap-3">
-                            <Pencil className="w-5 h-5 text-slate-200" />
-                            <span className="text-slate-100 font-semibold">Editar nombre</span>
-                          </div>
-                          <ChevronRight className="w-5 h-5 text-slate-500" />
-                        </button>
-                        <button className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors" onClick={() => setShowLyrics(true)} disabled={isBusy}>
-                          <div className="flex items-center gap-3">
-                            <FileText className="w-5 h-5 text-slate-200" />
-                            <span className="text-slate-100 font-semibold">Letra</span>
-                          </div>
-                          <ChevronRight className="w-5 h-5 text-slate-500" />
-                        </button>
-                        <button className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors" onClick={share} disabled={isBusy}>
-                          <div className="flex items-center gap-3">
-                            <Share2 className="w-5 h-5 text-slate-200" />
-                            <span className="text-slate-100 font-semibold">Compartir</span>
-                          </div>
-                          <ChevronRight className="w-5 h-5 text-slate-500" />
-                        </button>
+                        
+                        
+                        
                         <button className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors" onClick={() => setShowTrim(true)} disabled={isBusy || !(song.audioUrl || '').toString().trim()}>
                           <div className="flex items-center gap-3">
                             <Scissors className="w-5 h-5 text-slate-200" />
@@ -6499,17 +6509,11 @@ function SongOptionsSheet({
                         >
                           <div className="flex items-center gap-3">
                             <Share2 className="w-5 h-5 text-sky-300" />
-                            <span className="text-slate-100 font-semibold">Compartir a otra cuenta</span>
+                            <span className="text-slate-100 font-semibold">Enviar a otra cuenta</span>
                           </div>
                           <ChevronRight className="w-5 h-5 text-slate-500" />
                         </button>
-                        <button className="w-full flex items-center justify-between gap-3 px-4 py-3 hover:bg-white/[0.05] transition-colors" onClick={download} disabled={isBusy}>
-                          <div className="flex items-center gap-3">
-                            {downloadsAllowed === false ? <Lock className="w-5 h-5 text-amber-300" /> : <Download className="w-5 h-5 text-slate-200" />}
-                            <span className="text-slate-100 font-semibold">Descargar MP3</span>
-                          </div>
-                          <ChevronRight className="w-5 h-5 text-slate-500" />
-                        </button>
+                        
                         {canShowWav ? (
                           <button className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors" onClick={downloadWav} disabled={isBusy}>
                             <div className="flex items-center gap-3">
@@ -6519,13 +6523,7 @@ function SongOptionsSheet({
                             <ChevronRight className="w-5 h-5 text-slate-500" />
                           </button>
                         ) : null}
-                        <button className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors" onClick={() => openMp4Modal().catch(() => {})} disabled={isBusy}>
-                          <div className="flex items-center gap-3">
-                            <Video className="w-5 h-5 text-slate-200" />
-                            <span className="text-slate-100 font-semibold">Video (MP4) / Compartir en redes</span>
-                          </div>
-                          <ChevronRight className="w-5 h-5 text-slate-500" />
-                        </button>
+                        
                         {onStartCover ? (
                           <button
                             className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors"
@@ -6543,13 +6541,7 @@ function SongOptionsSheet({
                           </button>
                         ) : null}
 
-                        <button className={cn("w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors", isMureka ? "opacity-50 cursor-not-allowed" : "")} onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy || isMureka} title={isMureka ? "Próximamente disponible para Mureka" : ""}>
-                          <div className="flex items-center gap-3">
-                            <AudioLines className={cn("w-5 h-5", isMureka ? "text-slate-500" : "text-slate-200")} />
-                            <span className={cn("font-semibold", isMureka ? "text-slate-500" : "text-slate-100")}>Eliminar voz / Karaoke</span>
-                          </div>
-                          <ChevronRight className={cn("w-5 h-5", isMureka ? "text-slate-600" : "text-slate-500")} />
-                        </button>
+                        
                         <button className={cn("w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors", isMureka ? "opacity-50 cursor-not-allowed" : "")} onClick={() => separateStems('split_stem').catch(() => {})} disabled={isBusy || isMureka} title={isMureka ? "Próximamente disponible para Mureka" : ""}>
                           <div className="flex items-center gap-3">
                             <AudioLines className={cn("w-5 h-5", isMureka ? "text-slate-500" : "text-slate-200")} />
@@ -6701,19 +6693,10 @@ function SongOptionsSheet({
 
                     <div className="mt-6">
                       <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 font-black">Editar y administrar</div>
-                      <div className="mt-3 grid grid-cols-4 gap-3">
-                        <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={() => setShowEditTitle(true)} disabled={isBusy}>
-                          <Pencil className="w-5 h-5 text-slate-200" />
-                          <div className="mt-3 text-slate-100 font-semibold text-sm">Editar nombre</div>
-                        </button>
-                        <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={() => setShowLyrics(true)} disabled={isBusy}>
-                          <FileText className="w-5 h-5 text-slate-200" />
-                          <div className="mt-3 text-slate-100 font-semibold text-sm">Letra</div>
-                        </button>
-                        <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={share} disabled={isBusy}>
-                          <Share2 className="w-5 h-5 text-slate-200" />
-                          <div className="mt-3 text-slate-100 font-semibold text-sm">Compartir</div>
-                        </button>
+                      <div className="mt-3 grid grid-cols-2 gap-3">
+                        
+                        
+                        
                         <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={() => setShowTrim(true)} disabled={isBusy || !(song.audioUrl || '').toString().trim()}>
                           <Scissors className="w-5 h-5 text-slate-200" />
                           <div className="mt-3 text-slate-100 font-semibold text-sm">Recortar canción</div>
@@ -6743,12 +6726,9 @@ function SongOptionsSheet({
                           disabled={isBusy}
                         >
                           <Share2 className="w-5 h-5 text-sky-300" />
-                          <div className="mt-3 text-slate-100 font-semibold text-sm">Compartir a otra cuenta</div>
+                          <div className="mt-3 text-slate-100 font-semibold text-sm">Enviar a otra cuenta</div>
                         </button>
-                        <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={download} disabled={isBusy}>
-                          {downloadsAllowed === false ? <Lock className="w-5 h-5 text-amber-300" /> : <Download className="w-5 h-5 text-slate-200" />}
-                          <div className="mt-3 text-slate-100 font-semibold text-sm">Descargar MP3</div>
-                        </button>
+                        
                         {canShowWav ? (
                           <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={downloadWav} disabled={isBusy}>
                             {downloadsAllowed === false ? <Lock className="w-5 h-5 text-amber-300" /> : <Download className="w-5 h-5 text-slate-200" />}
@@ -6760,10 +6740,7 @@ function SongOptionsSheet({
                             <div className="mt-3 text-slate-400 font-semibold text-sm">Descargar WAV</div>
                           </div>
                         )}
-                        <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={() => openMp4Modal().catch(() => {})} disabled={isBusy}>
-                          <Video className="w-5 h-5 text-slate-200" />
-                          <div className="mt-3 text-slate-100 font-semibold text-sm">Video (MP4) / Compartir en redes</div>
-                        </button>
+                        
                         {onStartCover ? (
                           <button
                             className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left"
@@ -6778,10 +6755,7 @@ function SongOptionsSheet({
                           </button>
                         ) : null}
 
-                        <button className={cn("rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left", isMureka ? "opacity-50 cursor-not-allowed" : "")} onClick={() => separateStems('separate_vocal').catch(() => {})} disabled={isBusy || isMureka} title={isMureka ? "Próximamente disponible para Mureka" : ""}>
-                          <AudioLines className={cn("w-5 h-5", isMureka ? "text-slate-500" : "text-slate-200")} />
-                          <div className={cn("mt-3 font-semibold text-sm", isMureka ? "text-slate-500" : "text-slate-100")}>Eliminar voz / Karaoke</div>
-                        </button>
+                        
                         <button className={cn("rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left", isMureka ? "opacity-50 cursor-not-allowed" : "")} onClick={() => separateStems('split_stem').catch(() => {})} disabled={isBusy || isMureka} title={isMureka ? "Próximamente disponible para Mureka" : ""}>
                           <AudioLines className={cn("w-5 h-5", isMureka ? "text-slate-500" : "text-slate-200")} />
                           <div className={cn("mt-3 font-semibold text-sm", isMureka ? "text-slate-500" : "text-slate-100")}>STEMS</div>
@@ -6792,7 +6766,7 @@ function SongOptionsSheet({
 
                     <div className="mt-6">
                       <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500 font-black">Más opciones</div>
-                      <div className="mt-3 grid grid-cols-4 gap-3">
+                      <div className="mt-3 grid grid-cols-2 gap-3">
                         <button
                           className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left"
                           onClick={() => {
@@ -6892,8 +6866,10 @@ function SongOptionsSheet({
                   }}
                 />
               ) : null}
-            </div>
+              </div>
+            </details>
           </div>
+        </div>
       </div>
 
       {showPersonaSave && (
