@@ -3777,7 +3777,44 @@ const sunoHandler = (() => {
       const lookup = await sunoFetchJson("/api/v1/vocal-removal/record-info?taskId=" + encodeURIComponent(taskId), { method: "GET" });
       const record = lookup.data?.data;
       audioUrl = record?.response?.instrumentalUrl || record?.response?.instrumental_url;
-      if (!lookup.res.ok || !audioUrl) return send(res, 422, { error: "La pista sin voz aún no está disponible." });
+      if (!lookup.res.ok || !audioUrl) {
+        const status = String(record?.successFlag || record?.status || "").toUpperCase();
+        if (!/FAIL|ERROR|EXCEPTION/.test(status)) {
+          return send(res, 422, { error: "La pista sin voz aún no está disponible." });
+        }
+        const token = (process.env.REPLICATE_API_TOKEN || "").trim();
+        if (!token) return send(res, 503, { error: "El separador alternativo no está disponible." });
+        const version = (process.env.REPLICATE_ALL_IN_ONE_AUDIO_VERSION || "").trim() ||
+          "f2a8516c9084ef460592deaa397acd4a97f60f18c3d15d273644c72500cdff0e";
+        try {
+          const headers = { Authorization: `Token ${token}`, "Content-Type": "application/json" };
+          const init = await fetch("https://api.replicate.com/v1/predictions", {
+            method: "POST", headers, signal: AbortSignal.timeout(10000),
+            body: JSON.stringify({ version, input: {
+              music_input: song.audio_url, audioSeparator: true, audioSeparatorModel: "Kim_Vocal_2.onnx",
+            } }),
+          });
+          const started = await init.json();
+          if (!init.ok || !started.id) throw new Error("No se inició la separación alternativa.");
+          const deadline = Date.now() + 80000;
+          while (Date.now() < deadline) {
+            const result = await fetch(`https://api.replicate.com/v1/predictions/${encodeURIComponent(started.id)}`, {
+              headers, signal: AbortSignal.timeout(8000),
+            });
+            if (!result.ok) throw new Error("No se pudo consultar la separación alternativa.");
+            const prediction = await result.json();
+            if (prediction.status === "succeeded") {
+              audioUrl = prediction.output?.mdx_other || prediction.output?.instrumental || prediction.output?.no_vocals;
+              break;
+            }
+            if (["failed", "canceled", "aborted"].includes(prediction.status)) break;
+            await new Promise(resolve => setTimeout(resolve, 2500));
+          }
+        } catch (error) {
+          console.error("[karaoke-video] Separación alternativa", error instanceof Error ? error.message : error);
+        }
+        if (!audioUrl) return send(res, 502, { error: "No se obtuvo la pista sin voz con el separador alternativo." });
+      }
     }
     if (payload.showLyrics === true && (!song.suno_task_id || !song.suno_audio_id)) {
       return send(res, 422, { error: "Esta canción no tiene tiempos de letra disponibles." });
@@ -3787,7 +3824,7 @@ const sunoHandler = (() => {
     const permittedOrigins = [r2.publicBaseUrl, r2.endpoint, process.env.SUPABASE_URL]
       .filter(Boolean).map(value => new URL(String(value)).origin);
     if (source.protocol !== "https:" || (!permittedOrigins.includes(source.origin) &&
-      !["cdn.suno.ai", "cdn1.suno.ai", "cdn2.suno.ai", "musicfile.removeai.ai", "tempfile.aiquickdraw.com"].includes(source.hostname))) {
+      !["cdn.suno.ai", "cdn1.suno.ai", "cdn2.suno.ai", "musicfile.removeai.ai", "tempfile.aiquickdraw.com", "replicate.delivery", "pbxt.replicate.delivery"].includes(source.hostname))) {
       return send(res, 422, { error: "La fuente de audio de esta canción no es compatible con el video personalizado." });
     }
     const fs = await import("node:fs/promises");
