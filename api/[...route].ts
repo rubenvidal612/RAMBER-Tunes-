@@ -3454,7 +3454,7 @@ const sunoHandler = (() => {
               const stillAlive = await verifyTaskExistsSuno(reuseTaskId);
               if (stillAlive) {
                 try {
-                  const dup = { task_id: reuseTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true };
+                  const dup = { task_id: reuseTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true, extra: { karaoke_source_audio_id: effectiveAudioId } };
                   const q = await auth.admin.from("suno_tasks").insert([dup]);
                   if (q?.error) {
                     try { await auth.admin.from("suno_tasks").update({ consumed: true }).eq("task_id", reuseTaskId).eq("user_id", user.id); } catch (_) {}
@@ -3465,7 +3465,7 @@ const sunoHandler = (() => {
                 const retry = await retryGenerateWithoutTaskId();
                 if (retry.ok && retry.taskId) {
                   try {
-                    await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true });
+                    await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true, extra: { karaoke_source_audio_id: effectiveAudioId } });
                   } catch (_) {}
                   return send(res, 200, { taskId: retry.taskId, retried: true });
                 }
@@ -3474,7 +3474,7 @@ const sunoHandler = (() => {
               const retry = await retryGenerateWithoutTaskId();
               if (retry.ok && retry.taskId) {
                 try {
-                  await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true });
+                  await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true, extra: { karaoke_source_audio_id: effectiveAudioId } });
                 } catch (_) {}
                 return send(res, 200, { taskId: retry.taskId, retried: true });
               }
@@ -3484,7 +3484,7 @@ const sunoHandler = (() => {
           const retry = await retryGenerateWithoutTaskId();
           if (retry.ok && retry.taskId) {
             try {
-              await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true });
+              await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true, extra: { karaoke_source_audio_id: effectiveAudioId } });
             } catch (_) {}
             return send(res, 200, { taskId: retry.taskId, retried: true });
           }
@@ -3584,7 +3584,7 @@ const sunoHandler = (() => {
             const alive = await verifyTaskExistsSuno2(reuseTaskId);
             if (alive) {
               try {
-                const dup = { task_id: reuseTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true };
+                const dup = { task_id: reuseTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true, extra: { karaoke_source_audio_id: effectiveAudioId } };
                 const q = await auth.admin.from("suno_tasks").insert([dup]);
                 if (q?.error) {
                   try { await auth.admin.from("suno_tasks").update({ consumed: true }).eq("task_id", reuseTaskId).eq("user_id", user.id); } catch (_) {}
@@ -3595,7 +3595,7 @@ const sunoHandler = (() => {
               const retry = await retryGenerateWithoutTaskId2();
               if (retry.ok && retry.taskId) {
                 try {
-                  await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true });
+                  await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true, extra: { karaoke_source_audio_id: effectiveAudioId } });
                 } catch (_) {}
                 return send(res, 200, { taskId: retry.taskId, retried: true });
               }
@@ -3604,7 +3604,7 @@ const sunoHandler = (() => {
             const retry = await retryGenerateWithoutTaskId2();
             if (retry.ok && retry.taskId) {
               try {
-                await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true });
+                await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true, extra: { karaoke_source_audio_id: effectiveAudioId } });
               } catch (_) {}
               return send(res, 200, { taskId: retry.taskId, retried: true });
             }
@@ -3613,7 +3613,7 @@ const sunoHandler = (() => {
           const retry = await retryGenerateWithoutTaskId2();
           if (retry.ok && retry.taskId) {
             try {
-              await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true });
+              await auth.admin.from("suno_tasks").insert({ task_id: retry.taskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true, extra: { karaoke_source_audio_id: effectiveAudioId } });
             } catch (_) {}
             return send(res, 200, { taskId: retry.taskId, retried: true });
           }
@@ -3632,7 +3632,7 @@ const sunoHandler = (() => {
       }
 
       try {
-        const insRes = await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true });
+        const insRes = await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: `vocal-removal:${type}`, cost, consumed: true, extra: { karaoke_source_audio_id: effectiveAudioId } });
         if (insRes?.error) {
           console.warn("[handleSeparate] insert suno_tasks falló:", insRes.error.message || insRes.error);
         }
@@ -3745,13 +3745,29 @@ const sunoHandler = (() => {
     const image = Buffer.from(photo, "base64");
     if (image[0] !== 255 || image[1] !== 216 || image[2] !== 255) return send(res, 400, { error: "Foto inválida." });
     const { admin, user } = auth;
-    const { data: song } = await admin.from("library_items").select("title, audio_url, suno_audio_id")
+    const { data: song } = await admin.from("library_items").select("title, audio_url, suno_audio_id, suno_task_id")
       .eq("id", String(payload.songId || "")).eq("user_id", user.id).eq("type", "song").is("deleted_at", null).maybeSingle();
     if (!song?.audio_url) return send(res, 404, { error: "No encontramos el audio original en tu biblioteca." });
     const isAdmin = isAdminEmail(user.email);
-    const cost = isAdmin ? 0 : CREDIT_COSTS.music_video;
+    const cost = isAdmin ? 0 : CREDIT_COSTS.music_video + (payload.showLyrics === true ? CREDIT_COSTS.timestamped_lyrics : 0);
     if (cost && !(await getUserPlan(admin, user.id)).downloads_allowed) return send(res, 403, { error: "Tu plan no incluye videos." });
-    const source = new URL(song.audio_url);
+    let audioUrl = song.audio_url;
+    if (payload.instrumentalTaskId) {
+      const taskId = String(payload.instrumentalTaskId);
+      const { data: task } = await admin.from("suno_tasks").select("extra")
+        .eq("task_id", taskId).eq("user_id", user.id).eq("kind", "vocal-removal:separate_vocal").maybeSingle();
+      if (!task || task.extra?.karaoke_source_audio_id !== song.suno_audio_id) {
+        return send(res, 422, { error: "Primero prepara el instrumental de esta canción." });
+      }
+      const lookup = await sunoFetchJson("/api/v1/vocal-removal/record-info?taskId=" + encodeURIComponent(taskId), { method: "GET" });
+      const record = lookup.data?.data;
+      audioUrl = record?.response?.instrumentalUrl || record?.response?.instrumental_url;
+      if (!lookup.res.ok || !audioUrl) return send(res, 422, { error: "La pista sin voz aún no está disponible." });
+    }
+    if (payload.showLyrics === true && (!song.suno_task_id || !song.suno_audio_id)) {
+      return send(res, 422, { error: "Esta canción no tiene tiempos de letra disponibles." });
+    }
+    const source = new URL(audioUrl);
     const r2 = getR2Env();
     const permittedOrigins = [r2.publicBaseUrl, r2.endpoint, process.env.SUPABASE_URL]
       .filter(Boolean).map(value => new URL(String(value)).origin);
@@ -3797,12 +3813,43 @@ const sunoHandler = (() => {
       } finally { await audio.close(); }
       await fs.writeFile(join(dir, "cover.jpg"), image);
       const [w, h] = dimensions;
+      let filter = `scale=${w}:${h},format=yuv420p`;
+      if (payload.showLyrics === true) {
+        const lookup = await sunoFetchJson("/api/v1/generate/get-timestamped-lyrics", {
+          method: "POST", body: JSON.stringify({taskId: song.suno_task_id, audioId: song.suno_audio_id}),
+        });
+        const words = lookup.data?.data?.alignedWords;
+        if (!lookup.res.ok || !Array.isArray(words) || !words.length) throw new Error("La canción no tiene letra sincronizada.");
+        const stamp = (seconds: number) => new Date(Math.round(seconds * 1000)).toISOString().slice(11, 23).replace(".", ",");
+        const cues: string[] = [];
+        let line: string[] = [], start = 0, end = 0;
+        const flush = () => {
+          if (line.length) cues.push(`${cues.length + 1}\n${stamp(start)} --> ${stamp(end)}\n${line.join(" ")}\n`);
+          line = [];
+        };
+        for (const word of words.slice(0, 6000)) {
+          const raw = String(word?.word || "");
+          const a = Number(word?.startS), z = Number(word?.endS);
+          if (/^\s*\[.*\]\s*$/.test(raw)) continue;
+          const value = raw.replace(/[\r\n<>]/g, " ").replace(/[{}\\]/g, "").trim().slice(0, 75);
+          if (!value || !Number.isFinite(a) || !Number.isFinite(z) || a < 0 || z <= a || z > 7200) continue;
+          if (line.length && (line.join(" ").length + value.length > 40 || a - end > .8 || z - start > 5)) flush();
+          if (!line.length) start = a;
+          end = z;
+          line.push(value);
+          if (/\n/.test(raw)) flush();
+        }
+        flush();
+        if (!cues.length) throw new Error("No recibí tiempos válidos para la letra.");
+        await fs.writeFile(join(dir, "lyrics.srt"), cues.join("\n"));
+        filter += ",subtitles=lyrics.srt:force_style='FontName=DejaVu Sans,FontSize=18,Alignment=5,Outline=2,Shadow=1'";
+      }
       await promisify(execFile)(ffmpeg.path || ffmpeg.default?.path, [
         "-nostdin", "-loglevel", "error", "-protocol_whitelist", "file,pipe", "-loop", "1", "-framerate", "24", "-i", join(dir, "cover.jpg"),
         "-protocol_whitelist", "file,pipe", "-i", join(dir, "audio"), "-map", "0:v:0", "-map", "1:a:0",
-        "-vf", `scale=${w}:${h},format=yuv420p`, "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
+        "-vf", filter, "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
         "-threads", "2", "-c:a", "aac", "-b:a", "256k", "-shortest", "-movflags", "+faststart", join(dir, "video.mp4")
-      ], { timeout: 165000, maxBuffer: 1024 * 1024 });
+      ], { cwd: dir, timeout: 165000, maxBuffer: 1024 * 1024 });
       const audioDuration = await fs.stat(join(dir, "video.mp4"));
       if (!audioDuration.size) throw new Error("No se generó el video.");
       await uploadToR2(videoKey, await fs.readFile(join(dir, "video.mp4")), "video/mp4");
@@ -3821,7 +3868,7 @@ const sunoHandler = (() => {
         if (charged) await adjustUserCredits(admin, user.id, cost);
       }
       console.error("[photo-video]", error instanceof Error ? error.message.slice(0, 400) : error);
-      return send(res, 502, { error: "No se pudo generar el video con tu foto." });
+      return send(res, 502, { error: payload.showLyrics === true ? "No pude generar el video con letra. Verifica que la canción tenga letra sincronizada." : "No se pudo generar el video con tu foto." });
     } finally {
       await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
     }

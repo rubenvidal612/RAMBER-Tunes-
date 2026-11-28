@@ -4328,6 +4328,10 @@ function SongOptionsSheet({
   const [shareBusy, setShareBusy] = useState(false);
   const [shareMsg, setShareMsg] = useState('');
   const [mp4Author, setMp4Author] = useState('');
+  const [karaokeVideo, setKaraokeVideo] = useState(false);
+  const [videoLyrics, setVideoLyrics] = useState(false);
+  const videoInstrumentalRef = useRef('');
+  const [karaokeProgress, setKaraokeProgress] = useState('');
   const [photoMode, setPhotoMode] = useState(false);
   const [showVideoTitle, setShowVideoTitle] = useState(true);
   const [showVideoArtist, setShowVideoArtist] = useState(true);
@@ -4342,6 +4346,8 @@ function SongOptionsSheet({
   useEffect(() => {
     if (!showMp4) {
       setPhotoMode(false);
+      setKaraokeVideo(false);
+      setVideoLyrics(false);
       setShowVideoTitle(true);
       setShowVideoArtist(true);
       setVideoTitle('');
@@ -5723,10 +5729,46 @@ function SongOptionsSheet({
       lines.forEach((line, index) => ctx.fillText(line, width/2, height - 46*(lines.length-index) + 10, width-48));
       const session = await getAccessToken();
       if (!session.ok) throw new Error('Inicia sesión para crear el video.');
+      let instrumentalTaskId = '';
+      if (karaokeVideo) {
+        if (song.isCover || !song.sunoTaskId || !song.sunoAudioId || String(song.sunoTaskId).startsWith('treblo:')) {
+          throw new Error('Esta canción no admite separación de voz en Suno.');
+        }
+        if (!videoInstrumentalRef.current) {
+          setKaraokeProgress('Separando la voz de tu canción…');
+          const separation = await fetch('/api/suno/separate', {
+            method: 'POST',
+            headers: {'content-type': 'application/json', authorization: `Bearer ${session.token}`},
+            body: JSON.stringify({taskId: song.sunoTaskId, audioId: song.sunoAudioId, type: 'separate_vocal'}),
+          });
+          const result = await separation.json().catch(() => ({}));
+          if (!separation.ok || !result.taskId) throw new Error(result.error || 'No pude separar la voz.');
+          videoInstrumentalRef.current = result.taskId;
+        }
+        instrumentalTaskId = videoInstrumentalRef.current;
+        setKaraokeProgress('Esperando la pista sin voz…');
+        const until = Date.now() + 180000;
+        let ready = false;
+        while (Date.now() < until) {
+          const query = await fetch('/api/suno/task?kind=separate_vocal&taskId=' + encodeURIComponent(instrumentalTaskId), {
+            headers: {authorization: `Bearer ${session.token}`},
+          });
+          const output = await query.json().catch(() => ({}));
+          const status = String(output?.data?.data?.successFlag || output?.data?.data?.status || '').toUpperCase();
+          if (status === 'SUCCESS') { ready = true; break; }
+          if (/FAIL|ERROR|EXCEPTION/.test(status)) {
+            videoInstrumentalRef.current = '';
+            throw new Error('No se pudo separar la voz.');
+          }
+          await new Promise(resolve => setTimeout(resolve, 3500));
+        }
+        if (!ready) throw new Error('La pista sin voz sigue procesándose. Vuelve a intentarlo en un momento.');
+      }
+      setKaraokeProgress('Creando tu video…');
       const response = await fetch('/api/suno/mp4', {
         method: 'POST',
         headers: {'content-type': 'application/json', authorization: `Bearer ${session.token}`},
-        body: JSON.stringify({ mode: 'photo', songId: song.id, format: videoFrame, title, photo: canvas.toDataURL('image/jpeg', .87).split(',')[1] }),
+        body: JSON.stringify({ mode: 'photo', songId: song.id, format: videoFrame, title, instrumentalTaskId, showLyrics: videoLyrics, photo: canvas.toDataURL('image/jpeg', .87).split(',')[1] }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.taskId) throw new Error(result.error || 'No pude crear el video con tu foto.');
@@ -5735,7 +5777,7 @@ function SongOptionsSheet({
       onToast?.('Tu video con foto ya está en la pestaña Video.');
     } catch (error) {
       onToast?.(error instanceof Error ? error.message : 'No pude crear el video con tu foto.');
-    } finally { setIsBusy(false); }
+    } finally { setKaraokeProgress(''); setIsBusy(false); }
   };
 
   const createMp4 = async (authorName: string, shareAfter = false) => {
@@ -8154,9 +8196,21 @@ function SongOptionsSheet({
                 {photoMode ? 'Marca de agua: LucIAna.' : mp4WatermarkDisabled ? 'Marca de agua: sin LucIAna (Plan Productor).' : 'Marca de agua: LucIAna.'}
               </div>
               {photoMode ? <>
-                <p className="text-sm text-slate-300">Crear el video cuesta 2 créditos.</p>
+                <fieldset disabled={isBusy} className="space-y-2">
+                  <legend className="font-bold">Audio del video</legend>
+                  <select aria-label="Audio del video" value={karaokeVideo ? 'karaoke' : 'voice'} onChange={e => {
+                    const karaoke = e.target.value === 'karaoke';
+                    setKaraokeVideo(karaoke);
+                    if (karaoke) setVideoLyrics(true);
+                  }} className="w-full rounded-xl bg-slate-800 p-3">
+                    <option value="voice">Con voz original</option>
+                    <option value="karaoke" disabled={song.isCover || !song.sunoTaskId || !song.sunoAudioId}>Karaoke sin voz</option>
+                  </select>
+                  <label className="block text-sm"><input type="checkbox" checked={videoLyrics} onChange={e => setVideoLyrics(e.target.checked)} /> Mostrar letra sincronizada</label>
+                </fieldset>
+                <p className="text-sm text-slate-300">Video: 2 créditos{videoLyrics ? ' · Letra sincronizada: 0.4 créditos' : ''}{karaokeVideo && !videoInstrumentalRef.current ? ' · Separar voz: 10 créditos' : ''}.</p>
                 <button type="button" disabled={!videoPhoto || isBusy} onClick={() => void createPhotoMp4()} className="w-full rounded-full bg-violet-600 text-white min-h-12 font-bold disabled:opacity-50">
-                  {isBusy ? 'Creando tu video…' : 'Crear video con mi foto'}
+                  {isBusy ? karaokeProgress || 'Preparando tu video…' : karaokeVideo ? 'Crear video karaoke' : 'Crear video con mi foto'}
                 </button>
               </> : <>
               <button
