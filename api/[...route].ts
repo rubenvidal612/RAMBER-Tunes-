@@ -3735,6 +3735,98 @@ const sunoHandler = (() => {
     }
   }
 
+  async function createPhotoVideo(req: any, res: any, auth: any, payload: any) {
+    const formats: Record<string, [number, number]> = { "9:16": [720, 1280], "1:1": [720, 720], "16:9": [1280, 720] };
+    const dimensions = formats[String(payload.format)];
+    const photo = typeof payload.photo === "string" ? payload.photo : "";
+    if (!Array.isArray(dimensions) || !/^[A-Za-z0-9+/]+={0,2}$/.test(photo) || photo.length > 2000000) {
+      return send(res, 400, { error: "Foto o formato inválido." });
+    }
+    const image = Buffer.from(photo, "base64");
+    if (image[0] !== 255 || image[1] !== 216 || image[2] !== 255) return send(res, 400, { error: "Foto inválida." });
+    const { admin, user } = auth;
+    const { data: song } = await admin.from("library_items").select("title, audio_url, suno_audio_id")
+      .eq("id", String(payload.songId || "")).eq("user_id", user.id).eq("type", "song").is("deleted_at", null).maybeSingle();
+    if (!song?.audio_url) return send(res, 404, { error: "No encontramos el audio original en tu biblioteca." });
+    const isAdmin = isAdminEmail(user.email);
+    const cost = isAdmin ? 0 : CREDIT_COSTS.music_video;
+    if (cost && !(await getUserPlan(admin, user.id)).downloads_allowed) return send(res, 403, { error: "Tu plan no incluye videos." });
+    const source = new URL(song.audio_url);
+    const r2 = getR2Env();
+    const permittedOrigins = [r2.publicBaseUrl, r2.endpoint, process.env.SUPABASE_URL]
+      .filter(Boolean).map(value => new URL(String(value)).origin);
+    if (source.protocol !== "https:" || (!permittedOrigins.includes(source.origin) &&
+      !["cdn.suno.ai", "cdn1.suno.ai", "cdn2.suno.ai", "musicfile.removeai.ai", "tempfile.aiquickdraw.com"].includes(source.hostname))) {
+      return send(res, 422, { error: "La fuente de audio de esta canción no es compatible con el video personalizado." });
+    }
+    const fs = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { randomUUID } = await import("node:crypto");
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const ffmpeg: any = await import("@ffmpeg-installer/ffmpeg");
+    const dir = await fs.mkdtemp(join(tmpdir(), "luciana-video-"));
+    const taskId = "photo-" + randomUUID();
+    const prefix = "photo-videos/" + user.id + "/" + taskId;
+    const videoKey = prefix + ".mp4";
+    const coverKey = prefix + ".jpg";
+    let charged = false;
+    let saved = false;
+    try {
+      if (cost) {
+        const result = await consumeUserCredits(admin, user.id, cost);
+        if (!result.ok) return send(res, 402, { error: result.error || "Créditos insuficientes." });
+        charged = true;
+      }
+      const response = await fetch(source, { redirect: "error", signal: AbortSignal.timeout(40000) });
+      if (!response.ok || !response.body) throw new Error("El audio original ya no está disponible.");
+      const audio = await fs.open(join(dir, "audio"), "w");
+      try {
+        const reader = response.body.getReader();
+        try {
+          let size = 0;
+          for (;;) {
+            const chunk = await reader.read();
+            if (chunk.done) break;
+            size += chunk.value.length;
+            if (size > 50 * 1024 * 1024) throw new Error("El audio supera el tamaño permitido.");
+            await audio.writeFile(chunk.value);
+          }
+        } finally { await reader.cancel().catch(() => {}); }
+      } finally { await audio.close(); }
+      await fs.writeFile(join(dir, "cover.jpg"), image);
+      const [w, h] = dimensions;
+      await promisify(execFile)(ffmpeg.path || ffmpeg.default?.path, [
+        "-nostdin", "-loglevel", "error", "-protocol_whitelist", "file,pipe", "-loop", "1", "-framerate", "24", "-i", join(dir, "cover.jpg"),
+        "-protocol_whitelist", "file,pipe", "-i", join(dir, "audio"), "-map", "0:v:0", "-map", "1:a:0",
+        "-vf", `scale=${w}:${h},format=yuv420p`, "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
+        "-threads", "2", "-c:a", "aac", "-b:a", "256k", "-shortest", "-t", "600", "-movflags", "+faststart", join(dir, "video.mp4")
+      ], { timeout: 165000, maxBuffer: 1024 * 1024 });
+      const audioDuration = await fs.stat(join(dir, "video.mp4"));
+      if (!audioDuration.size) throw new Error("No se generó el video.");
+      await uploadToR2(videoKey, await fs.readFile(join(dir, "video.mp4")), "video/mp4");
+      await uploadToR2(coverKey, image, "image/jpeg");
+      const title = String(payload.title || song.title || "Video musical").trim().slice(0, 100);
+      const result = await admin.from("suno_tasks").insert({
+        task_id: taskId, user_id: user.id, kind: "mp4", cost, consumed: true,
+        extra: { video_title: title, video_source_audio_id: song.suno_audio_id, photo_video_key: videoKey, photo_cover_key: coverKey },
+      });
+      if (result.error) throw new Error("No pude guardar el video en tu biblioteca.");
+      saved = true;
+      return send(res, 200, { taskId });
+    } catch (error) {
+      if (!saved) {
+        await deleteFromR2([videoKey, coverKey]).catch(() => {});
+        if (charged) await adjustUserCredits(admin, user.id, cost);
+      }
+      console.error("[photo-video]", error instanceof Error ? error.message.slice(0, 400) : error);
+      return send(res, 502, { error: "No se pudo generar el video con tu foto." });
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+
   async function handleMp4(req: any, res: any) {
     if ((req.method || "").toUpperCase() !== "POST") return send(res, 405, { error: "Método no permitido" });
 
@@ -3743,6 +3835,8 @@ const sunoHandler = (() => {
 
     const payload = parseJsonBody(req);
     if (!payload) return send(res, 400, { error: "Body inválido" });
+
+    if (payload.mode === "photo") return createPhotoVideo(req, res, auth, payload);
 
     const taskId = typeof payload?.taskId === "string" ? payload.taskId.trim() : "";
     const audioId = typeof payload?.audioId === "string" ? payload.audioId.trim() : "";
@@ -3869,6 +3963,23 @@ const sunoHandler = (() => {
     const taskId = (pickQuery(req, "taskId") || "").trim();
     if (!taskId) return send(res, 400, { error: "Falta taskId" });
     const kind = (pickQuery(req, "kind") || "").trim().toLowerCase() || "generate";
+
+    if (kind === "mp4" && taskId.startsWith("photo-")) {
+      try {
+        const { data: row } = await auth.admin.from("suno_tasks").select("created_at, extra")
+          .eq("task_id", taskId).eq("user_id", auth.user.id).eq("kind", "mp4").maybeSingle();
+        if (!row?.extra?.photo_video_key || Date.now() - Date.parse(row.created_at) >= 15 * 86400000) {
+          return send(res, 404, { error: "El video no está disponible o ya venció." });
+        }
+        res.setHeader("cache-control", "private, no-store");
+        const [videoUrl, imageUrl] = await Promise.all([
+          getSignedR2Url(row.extra.photo_video_key, 900), getSignedR2Url(row.extra.photo_cover_key, 900)
+        ]);
+        return send(res, 200, { data: { data: { status: "SUCCESS", response: {
+          videoUrl, imageUrl, title: row.extra.video_title, audioId: row.extra.video_source_audio_id,
+        } } }, kind });
+      } catch { return send(res, 502, { error: "No pude abrir el video." }); }
+    }
 
     try {
       const enc = encodeURIComponent(taskId);
@@ -30974,6 +31085,15 @@ export default async function handler(req: any, res: any) {
       const createClient = await getSupabaseCreateClient();
       const admin = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
       const result = await cleanupTemporaryAudio(admin, supabaseUrl, { dryRun: u.searchParams.get("dry_run") === "1" });
+      if (u.searchParams.get("dry_run") !== "1") {
+        const { data: expired, error } = await admin.from("suno_tasks").select("task_id, extra")
+          .eq("kind", "mp4").like("task_id", "photo-%").lt("created_at", new Date(Date.now() - 15 * 86400000).toISOString()).limit(100);
+        if (error) return respond(500, { ok: false, error: "No pude consultar los videos vencidos." });
+        for (const video of expired || []) {
+          await deleteFromR2([video.extra.photo_video_key, video.extra.photo_cover_key]);
+          await admin.from("suno_tasks").delete().eq("task_id", video.task_id).eq("kind", "mp4");
+        }
+      }
       console.log(JSON.stringify({ kind: "TEMPORARY_AUDIO_CLEANUP", ...result }));
       return respond(result.ok ? 200 : 500, result);
     }

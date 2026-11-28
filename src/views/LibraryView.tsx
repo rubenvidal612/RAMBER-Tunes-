@@ -4328,6 +4328,11 @@ function SongOptionsSheet({
   const [shareBusy, setShareBusy] = useState(false);
   const [shareMsg, setShareMsg] = useState('');
   const [mp4Author, setMp4Author] = useState('');
+  const [photoMode, setPhotoMode] = useState(false);
+  const [showVideoTitle, setShowVideoTitle] = useState(true);
+  const [showVideoArtist, setShowVideoArtist] = useState(true);
+  const [videoTitle, setVideoTitle] = useState('');
+  const [videoDedication, setVideoDedication] = useState('');
   const [videoPhoto, setVideoPhoto] = useState('');
   const [videoFrame, setVideoFrame] = useState('9:16');
   const [videoZoom, setVideoZoom] = useState(1);
@@ -4336,6 +4341,11 @@ function SongOptionsSheet({
   useEffect(() => () => { if (videoPhoto) URL.revokeObjectURL(videoPhoto); }, [videoPhoto]);
   useEffect(() => {
     if (!showMp4) {
+      setPhotoMode(false);
+      setShowVideoTitle(true);
+      setShowVideoArtist(true);
+      setVideoTitle('');
+      setVideoDedication('');
       setVideoPhoto('');
       setVideoFrame('9:16');
       setVideoZoom(1);
@@ -5682,6 +5692,50 @@ function SongOptionsSheet({
     } finally {
       setIsBusy(false);
     }
+  };
+
+  const createPhotoMp4 = async () => {
+    if (!videoPhoto || isBusy) return;
+    setIsBusy(true);
+    try {
+      const image = new Image();
+      image.src = videoPhoto;
+      await image.decode();
+      const canvas = document.createElement('canvas');
+      canvas.width = videoFrame === '16:9' ? 1280 : 720;
+      canvas.height = videoFrame === '9:16' ? 1280 : 720;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('No pude preparar la imagen.');
+      const {width, height} = canvas;
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, width, height);
+      const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight) * videoZoom;
+      const w = image.naturalWidth * scale;
+      const h = image.naturalHeight * scale;
+      ctx.drawImage(image, (width-w)/2 + width*videoX/100, (height-h)/2 + height*videoY/100, w, h);
+      const title = videoTitle.trim() || song.title || 'Video musical';
+      const lines = [showVideoTitle ? title : '', showVideoArtist ? mp4Author.trim() : '', videoDedication.trim(), 'LucIAna Music'].filter(Boolean);
+      ctx.fillStyle = '#000a';
+      ctx.fillRect(0, height - 46 * lines.length - 20, width, 46 * lines.length + 20);
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 28px sans-serif';
+      lines.forEach((line, index) => ctx.fillText(line, width/2, height - 46*(lines.length-index) + 10, width-48));
+      const session = await getAccessToken();
+      if (!session.ok) throw new Error('Inicia sesión para crear el video.');
+      const response = await fetch('/api/suno/mp4', {
+        method: 'POST',
+        headers: {'content-type': 'application/json', authorization: `Bearer ${session.token}`},
+        body: JSON.stringify({ mode: 'photo', songId: song.id, format: videoFrame, title, photo: canvas.toDataURL('image/jpeg', .87).split(',')[1] }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.taskId) throw new Error(result.error || 'No pude crear el video con tu foto.');
+      setShowMp4(false);
+      onOpenVideos?.();
+      onToast?.('Tu video con foto ya está en la pestaña Video.');
+    } catch (error) {
+      onToast?.(error instanceof Error ? error.message : 'No pude crear el video con tu foto.');
+    } finally { setIsBusy(false); }
   };
 
   const createMp4 = async (authorName: string, shareAfter = false) => {
@@ -8040,10 +8094,13 @@ function SongOptionsSheet({
               </button>
             </div>
             <div className="p-4 flex-1 overflow-y-auto overscroll-contain space-y-3">
-              <details className="rounded-2xl border border-violet-400/35 bg-violet-500/10 p-3">
-                <summary className="cursor-pointer font-bold text-violet-100">Probar mi foto en los formatos de video</summary>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button" aria-pressed={!photoMode} onClick={() => setPhotoMode(false)} className="rounded-xl border border-white/20 p-3 font-bold aria-pressed:bg-violet-700">Fondo automático</button>
+                <button type="button" aria-pressed={photoMode} onClick={() => setPhotoMode(true)} className="rounded-xl border border-white/20 p-3 font-bold aria-pressed:bg-violet-700">Mi propio fondo</button>
+              </div>
+              {photoMode && <div className="rounded-2xl border border-violet-400/35 bg-violet-500/10 p-3">
                 <div className="mt-3 space-y-3">
-                  <p className="text-sm text-slate-300">Vista previa local. El botón Crear video usa el fondo automático de Suno.</p>
+                  <p className="text-sm text-slate-300">Elige una foto y compara los formatos antes de crear tu video.</p>
                   <input type="file" aria-label="Elegir foto para la vista previa" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
                     className="block w-full text-sm file:mr-2 file:rounded-xl file:border-0 file:bg-violet-700 file:px-3 file:py-2 file:text-white"
                     onChange={(event) => {
@@ -8078,7 +8135,13 @@ function SongOptionsSheet({
                     <label className="block text-sm">Mover verticalmente <input className="block w-full" type="range" min="-30" max="30" value={videoY} onChange={e => setVideoY(Number(e.target.value))} /></label>
                   </>}
                 </div>
-              </details>
+              </div>}
+              {photoMode && <div className="space-y-2">
+                <label className="block text-sm">Título<input className="block w-full rounded-xl bg-white/10 p-3" maxLength={100} placeholder={song.title} value={videoTitle} onChange={e => setVideoTitle(e.target.value)} /></label>
+                <label className="block text-sm">Dedicatoria opcional<input className="block w-full rounded-xl bg-white/10 p-3" maxLength={100} value={videoDedication} onChange={e => setVideoDedication(e.target.value)} /></label>
+                <label className="block text-sm"><input type="checkbox" checked={showVideoTitle} onChange={e => setShowVideoTitle(e.target.checked)} /> Mostrar título</label>
+                <label className="block text-sm"><input type="checkbox" checked={showVideoArtist} onChange={e => setShowVideoArtist(e.target.checked)} /> Mostrar artista</label>
+              </div>}
               <div className="text-slate-300 text-sm">Autor (opcional)</div>
               <input
                 value={mp4Author}
@@ -8088,8 +8151,14 @@ function SongOptionsSheet({
                 className="w-full glass-card rounded-xl p-3 text-sm text-white placeholder:text-slate-500 outline-none"
               />
               <div className="text-slate-400 text-xs">
-                {mp4WatermarkDisabled ? 'Marca de agua: sin LucIAna (Plan Productor).' : 'Marca de agua: LucIAna.'}
+                {photoMode ? 'Marca de agua: LucIAna.' : mp4WatermarkDisabled ? 'Marca de agua: sin LucIAna (Plan Productor).' : 'Marca de agua: LucIAna.'}
               </div>
+              {photoMode ? <>
+                <p className="text-sm text-slate-300">Crear el video cuesta 2 créditos.</p>
+                <button type="button" disabled={!videoPhoto || isBusy} onClick={() => void createPhotoMp4()} className="w-full rounded-full bg-violet-600 text-white min-h-12 font-bold disabled:opacity-50">
+                  {isBusy ? 'Creando tu video…' : 'Crear video con mi foto'}
+                </button>
+              </> : <>
               <button
                 onClick={() => {
                   const a = mp4Author;
@@ -8102,6 +8171,7 @@ function SongOptionsSheet({
                 Crear video
               </button>
               <button disabled={isBusy} onClick={() => { setShowMp4(false); createMp4(mp4Author, true).catch(() => {}); }} className="w-full rounded-full bg-violet-600 text-white h-[48px] font-extrabold flex items-center justify-center gap-2 disabled:opacity-50"><Share2 className="w-5 h-5" /> Crear video para compartir</button>
+              </>}
               <div className="text-[11px] text-slate-500">El video se guarda 15 días en almacenamiento externo.</div>
             </div>
           </div>
