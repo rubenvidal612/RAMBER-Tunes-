@@ -2317,7 +2317,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                             <button
                               onClick={async (e) => {
                                 e.stopPropagation();
-                                const ok = window.confirm('¿Estás seguro de eliminar este video de tu lista? La eliminación solo borra el registro en tu biblioteca (el archivo de Suno no se puede borrar).');
+                                const ok = window.confirm('¿Estás seguro de eliminar este video de tu lista? Este video se quitará de tu biblioteca.');
                                 if (!ok) return;
                                 setOpenVideoMenuId(null);
                                 try {
@@ -8172,7 +8172,7 @@ function SongOptionsSheet({
               </button>
               <button disabled={isBusy} onClick={() => { setShowMp4(false); createMp4(mp4Author, true).catch(() => {}); }} className="w-full rounded-full bg-violet-600 text-white h-[48px] font-extrabold flex items-center justify-center gap-2 disabled:opacity-50"><Share2 className="w-5 h-5" /> Crear video para compartir</button>
               </>}
-              <div className="text-[11px] text-slate-500">El video se guarda 15 días en almacenamiento externo.</div>
+              <div className="text-[11px] text-slate-500">El video estará disponible durante 15 días.</div>
             </div>
           </div>
         </div>

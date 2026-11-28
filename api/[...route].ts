@@ -3735,7 +3735,7 @@ const sunoHandler = (() => {
     }
   }
 
-  async function createPhotoVideo(req: any, res: any, auth: any, payload: any) {
+  async function createPhotoVideo(res: any, auth: any, payload: any) {
     const formats: Record<string, [number, number]> = { "9:16": [720, 1280], "1:1": [720, 720], "16:9": [1280, 720] };
     const dimensions = formats[String(payload.format)];
     const photo = typeof payload.photo === "string" ? payload.photo : "";
@@ -3801,7 +3801,7 @@ const sunoHandler = (() => {
         "-nostdin", "-loglevel", "error", "-protocol_whitelist", "file,pipe", "-loop", "1", "-framerate", "24", "-i", join(dir, "cover.jpg"),
         "-protocol_whitelist", "file,pipe", "-i", join(dir, "audio"), "-map", "0:v:0", "-map", "1:a:0",
         "-vf", `scale=${w}:${h},format=yuv420p`, "-c:v", "libx264", "-preset", "ultrafast", "-tune", "stillimage",
-        "-threads", "2", "-c:a", "aac", "-b:a", "256k", "-shortest", "-t", "600", "-movflags", "+faststart", join(dir, "video.mp4")
+        "-threads", "2", "-c:a", "aac", "-b:a", "256k", "-shortest", "-movflags", "+faststart", join(dir, "video.mp4")
       ], { timeout: 165000, maxBuffer: 1024 * 1024 });
       const audioDuration = await fs.stat(join(dir, "video.mp4"));
       if (!audioDuration.size) throw new Error("No se generó el video.");
@@ -3836,7 +3836,7 @@ const sunoHandler = (() => {
     const payload = parseJsonBody(req);
     if (!payload) return send(res, 400, { error: "Body inválido" });
 
-    if (payload.mode === "photo") return createPhotoVideo(req, res, auth, payload);
+    if (payload.mode === "photo") return createPhotoVideo(res, auth, payload);
 
     const taskId = typeof payload?.taskId === "string" ? payload.taskId.trim() : "";
     const audioId = typeof payload?.audioId === "string" ? payload.audioId.trim() : "";
@@ -15968,7 +15968,7 @@ const videosHandler = (() => {
       try {
         const check = await admin
           .from("suno_tasks")
-          .select("task_id, user_id")
+          .select("task_id, user_id, extra")
           .eq("task_id", taskId)
           .eq("kind", "mp4")
           .limit(1)
@@ -15976,6 +15976,9 @@ const videosHandler = (() => {
         const row = (check && check.data) || null;
         if (!row || String(row.user_id || "") !== userId) {
           return send(res, 403, { ok: false, error: "No autorizado." });
+        }
+        if (taskId.startsWith("photo-") && row.extra?.photo_video_key) {
+          await deleteFromR2([row.extra.photo_video_key, row.extra.photo_cover_key]);
         }
         const del = await admin.from("suno_tasks").delete().eq("task_id", taskId).eq("user_id", userId).eq("kind", "mp4");
         if (del && del.error) return send(res, 500, { ok: false, error: "No pude eliminar el video.", detail: del.error.message });
