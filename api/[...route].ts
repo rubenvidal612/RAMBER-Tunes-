@@ -3454,7 +3454,8 @@ const sunoHandler = (() => {
                   .select("task_id")
                   .eq("user_id", user.id)
                   .eq("kind", `vocal-removal:${type}`)
-                  .order("task_id", { ascending: false })
+                  .eq("extra->>karaoke_source_audio_id", effectiveAudioId)
+                  .order("created_at", { ascending: false })
                   .limit(1);
                 const rows = Array.isArray(prev?.data) ? prev.data : [];
                 if (rows[0] && typeof (rows[0] as any).task_id === "string") {
@@ -3585,7 +3586,8 @@ const sunoHandler = (() => {
                 .select("task_id")
                 .eq("user_id", user.id)
                 .eq("kind", `vocal-removal:${type}`)
-                .order("task_id", { ascending: false })
+                .eq("extra->>karaoke_source_audio_id", effectiveAudioId)
+                .order("created_at", { ascending: false })
                 .limit(1);
               const rows = Array.isArray(prev?.data) ? prev.data : [];
               if (rows[0] && typeof (rows[0] as any).task_id === "string") {
