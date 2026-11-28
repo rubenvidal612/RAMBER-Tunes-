@@ -3824,8 +3824,10 @@ const sunoHandler = (() => {
               .select("task_id")
               .eq("user_id", user.id)
               .eq("kind", "mp4")
+              .eq("extra->>video_source_audio_id", audioId)
+              .eq("extra->>video_source_task_id", taskId)
               .order("created_at", { ascending: false })
-              .limit(5);
+              .limit(1);
             const rows = Array.isArray(q?.data) ? q.data : [];
             if (rows.length > 0) existingId = String(rows[0].task_id || "").trim();
           } catch (_) { existingId = ""; }
@@ -3843,7 +3845,8 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Respuesta inválida del proveedor" });
       }
 
-      await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: "mp4", cost, consumed: true });
+      const savedVideo = await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: "mp4", cost, consumed: true, extra: { video_source_audio_id: audioId, video_source_task_id: taskId } });
+      if (savedVideo.error) { console.warn("[mp4] error guardando tarea", savedVideo.error.message); await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: "mp4", cost, consumed: true }); }
       return send(res, 200, { taskId: outTaskId });
     } catch (e) {
       if (!isAdmin) await adjustUserCredits(auth.admin, user.id, cost);
@@ -15809,7 +15812,7 @@ const videosHandler = (() => {
         let rows: any[] = [];
         const r1 = await admin
           .from("suno_tasks")
-          .select("task_id, kind, created_at")
+          .select("task_id, kind, created_at, extra")
           .eq("user_id", userId)
           .eq("kind", "mp4")
           .order("created_at", { ascending: false })
@@ -15826,6 +15829,7 @@ const videosHandler = (() => {
           .map((x: any) => ({
             taskId: String(x?.task_id || "").trim(),
             created_at: typeof x?.created_at === "string" ? x.created_at : "",
+            audioId: String(x?.extra?.video_source_audio_id || ""),
           }))
           .filter((x: any) => x.taskId);
 
