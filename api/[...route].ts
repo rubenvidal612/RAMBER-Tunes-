@@ -3775,8 +3775,12 @@ const sunoHandler = (() => {
         return send(res, 422, { error: "Primero prepara el instrumental de esta canción." });
       }
       const lookup = await sunoFetchJson("/api/v1/vocal-removal/record-info?taskId=" + encodeURIComponent(taskId), { method: "GET" });
-      const record = lookup.data?.data;
+      const record = lookup.data?.data?.data || lookup.data?.data;
       audioUrl = record?.response?.instrumentalUrl || record?.response?.instrumental_url;
+      if (!audioUrl) console.warn("[karaoke-video] Suno sin instrumental", {
+        httpStatus: lookup.res.status, providerCode: lookup.data?.code,
+        status: String(record?.successFlag || record?.status || "").slice(0, 80),
+      });
       if (!lookup.res.ok || !audioUrl) {
         const status = String(record?.successFlag || record?.status || "").toUpperCase();
         if (!/FAIL|ERROR|EXCEPTION/.test(status)) {
@@ -3813,7 +3817,10 @@ const sunoHandler = (() => {
         } catch (error) {
           console.error("[karaoke-video] Separación alternativa", error instanceof Error ? error.message : error);
         }
-        if (!audioUrl) return send(res, 502, { error: "No se obtuvo la pista sin voz con el separador alternativo." });
+        if (!audioUrl) {
+          console.warn("[karaoke-video] El separador alternativo no entregó audio");
+          return send(res, 502, { error: "No se obtuvo la pista sin voz con el separador alternativo." });
+        }
       }
     }
     if (payload.showLyrics === true && (!song.suno_task_id || !song.suno_audio_id)) {
