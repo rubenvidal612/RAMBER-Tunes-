@@ -129,6 +129,9 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState('');
   const [openVideoMenuId, setOpenVideoMenuId] = useState<string | null>(null);
+  const [videoShare, setVideoShare] = useState<{taskId: string; title: string; file?: File; url?: string; error?: string; loading: boolean} | null>(null);
+  const shareRequestRef = useRef(0);
+  const closeVideoShare = () => { shareRequestRef.current++; setVideoShare(null); };
   const [searchDraft, setSearchDraft] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [brokenCovers, setBrokenCovers] = useState<Record<string, boolean>>({});
@@ -1428,67 +1431,51 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     try { if (link.parentNode) link.parentNode.removeChild(link); } catch {}
   };
 
-  const shareVideoByTaskId = async (taskId: string) => {
-    const t = await getAccessToken();
-    if (!t.ok) {
-      alert(t.error || 'No se pudo iniciar sesión.');
-      return;
-    }
-    const tr = await fetch(`/api/suno/task?kind=mp4&taskId=${encodeURIComponent(taskId)}`, {
-      headers: { authorization: `Bearer ${t.token}` },
-    });
-    const tout = await tr.json().catch(() => ({}));
-    if (!tr.ok) {
-      alert((tout?.detail || tout?.error || 'No pude consultar el video.').toString());
-      return;
-    }
-
-    const provider = tout?.data;
-    const status = String(
-      provider?.data?.successFlag ||
-        provider?.data?.status ||
-        provider?.data?.data?.successFlag ||
-        provider?.data?.data?.status ||
-        ''
-    ).toUpperCase();
-
-    if (status === 'FAILED' || status === 'CREATE_TASK_FAILED' || status === 'GENERATE_MP4_FAILED' || status === 'CALLBACK_EXCEPTION') {
-      alert('No se pudo generar el video.');
-      return;
-    }
-    if (status !== 'SUCCESS') {
-      alert('Tu video aún se está procesando. Intenta de nuevo en un rato.');
-      return;
-    }
-
-    const videoUrl = normalizePublicUrl(
-      String(
-        provider?.data?.response?.videoUrl ||
-          provider?.data?.data?.response?.videoUrl ||
-          provider?.data?.response?.video_url ||
-          provider?.data?.data?.response?.video_url ||
-          ''
-      ).trim()
-    );
-
-    if (!videoUrl) {
-      alert('El video terminó, pero no recibí el link.');
-      return;
-    }
-
+  const shareVideoByTaskId = async (taskId: string, songTitle?: string) => {
+    const request = ++shareRequestRef.current;
+    const title = songTitle || videoTitles[taskId] || 'Mi canción';
+    setVideoShare({ taskId, title, loading: true });
+    let url = '';
     try {
-      if ((navigator as any).share) {
-        await (navigator as any).share({ title: 'LucIAna | Music - Video', url: videoUrl });
+      const t = await getAccessToken();
+      if (!t.ok) throw new Error('Inicia sesión para compartir tu video.');
+      const balance = await fetch('/api/account/balance', {headers: {authorization: `Bearer ${t.token}`}});
+      const plan = await balance.json().catch(() => ({}));
+      if (!balance.ok || !plan?.downloads_allowed) throw new Error('Tu plan no permite descargar este video o no se pudo verificar.');
+      const tr = await fetch(`/api/suno/task?kind=mp4&taskId=${encodeURIComponent(taskId)}`, {headers: {authorization: `Bearer ${t.token}`}});
+      const out = await tr.json().catch(() => ({}));
+      if (!tr.ok) throw new Error('No se pudo consultar el video.');
+      const p = out?.data;
+      const status = String(p?.data?.successFlag || p?.data?.status || p?.data?.data?.successFlag || p?.data?.data?.status || '').toUpperCase();
+      if (['FAILED','CREATE_TASK_FAILED','GENERATE_MP4_FAILED','CALLBACK_EXCEPTION'].includes(status)) throw new Error('No se pudo generar el video.');
+      if (status !== 'SUCCESS') throw new Error('Tu video todavía se está creando. Intenta de nuevo en unos minutos.');
+      url = normalizePublicUrl(String(p?.data?.response?.videoUrl || p?.data?.data?.response?.videoUrl || p?.data?.response?.video_url || p?.data?.data?.response?.video_url || '').trim());
+      if (!url || !/^https:\/\//i.test(url)) throw new Error('No se encontró el archivo de video.');
+      const response = await fetch(url, {credentials: 'omit'});
+      if (!response.ok) throw new Error('No se pudo preparar el archivo MP4.');
+      const blob = await response.blob();
+      if (!blob.size || /text\/|json|html/i.test(blob.type)) throw new Error('El archivo de video no está disponible.');
+      const file = new File([blob], (sanitizeFileName(title) || 'Mi canción') + '.mp4', {type: 'video/mp4'});
+      if (request === shareRequestRef.current) setVideoShare({taskId, title, file, url, loading: false});
+    } catch (e) {
+      if (request === shareRequestRef.current) setVideoShare({taskId, title, url: url || undefined, loading: false, error: e instanceof Error ? e.message : 'No se pudo preparar el video.'});
+    }
+  };
+
+  const sharePreparedVideo = async (network?: string) => {
+    const file = videoShare?.file;
+    if (!file) return;
+    const nav = navigator as Navigator & {share?: (data: {files: File[]}) => Promise<void>; canShare?: (data: {files: File[]}) => boolean};
+    try {
+      if (nav.share && (!nav.canShare || nav.canShare({files: [file]}))) {
+        await nav.share({files: [file]});
         return;
       }
-    } catch {
+    } catch (e) {
+      if (e instanceof Error && e.name === 'AbortError') return;
     }
-    try {
-      await navigator.clipboard.writeText(videoUrl);
-      alert('Link copiado al portapapeles.');
-    } catch {
-      alert(videoUrl);
-    }
+    const ok = await downloadBlobAsFile(file, file.name);
+    onToast?.(ok ? `Video descargado. Abre ${network || 'tu red social'} y selecciona el video para publicarlo.` : 'No se pudo descargar el video.');
   };
 
   useEffect(() => {
@@ -2208,6 +2195,11 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                         >
                           <Download className="w-4 h-4" />
                         </button>
+                        <button
+                          onClick={() => shareVideoByTaskId(v.taskId, title).catch(() => {})}
+                          className="bg-violet-600 hover:bg-violet-500 rounded-full px-3 py-2 text-white flex items-center gap-2"
+                          aria-label="Compartir video en redes sociales"
+                        ><Share2 className="w-4 h-4" /><span className="hidden sm:inline text-sm font-bold">Compartir</span></button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -3342,6 +3334,25 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         />
       )}
 
+      {videoShare && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-black/75 flex items-end sm:items-center justify-center p-3" role="dialog" aria-modal="true" aria-label="Compartir video">
+          <button className="absolute inset-0" aria-label="Cerrar" onClick={closeVideoShare} />
+          <section className="relative w-full max-w-md rounded-3xl bg-[#10121d] border border-white/10 p-5 text-white space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center"><div><h2 className="text-xl font-extrabold">¡Comparte tu talento!</h2><p className="text-slate-300 text-sm break-words">{videoShare.title}</p></div><button onClick={closeVideoShare} aria-label="Cerrar" className="p-3 rounded-full bg-white/10"><X className="w-5 h-5" /></button></div>
+            {videoShare.loading ? <p role="status" className="rounded-xl bg-violet-500/10 p-4">Preparando tu video… Espera un momento.</p> : videoShare.error ? <div role="status" className="text-amber-200 text-sm">{videoShare.error}<button className="block mt-3 rounded-xl bg-white/10 p-3" onClick={() => shareVideoByTaskId(videoShare.taskId, videoShare.title)}>Volver a intentar</button></div> : <p className="text-emerald-300 text-sm">Tu video está listo. Elige la aplicación en el menú de tu celular.</p>}
+            <div className="grid grid-cols-3 gap-2">
+              {['Facebook','WhatsApp','TikTok','Instagram','YouTube','Telegram'].map(network => <button key={network} disabled={!videoShare.file} onClick={() => sharePreparedVideo(network)} className="flex flex-col items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/5 p-3 min-h-[88px] disabled:opacity-40 text-sm">
+                {network === 'Telegram' ? <svg viewBox="0 0 24 24" className="w-8 h-8" aria-hidden="true"><circle cx="12" cy="12" r="12" fill="#229ED9"/><path fill="white" d="M5 11.5 19 6l-3 12-4.2-3.3-2.4 2.2.4-4.1 6.4-4.1-8 4.8z"/></svg> : <img src={`/assets/social/${network.toLowerCase()}.svg`} className="w-8 h-8" alt="" />}
+                {network}
+              </button>)}
+            </div>
+            <button disabled={!videoShare.file} onClick={() => sharePreparedVideo()} className="w-full rounded-2xl bg-violet-600 p-4 font-bold disabled:opacity-40 flex justify-center gap-2"><Share2 className="w-5 h-5" /> Compartir mi video</button>
+            <button disabled={!videoShare.file && !videoShare.url} onClick={() => { if (videoShare.file) downloadBlobAsFile(videoShare.file, videoShare.file.name); else if (videoShare.url) downloadToDevice(videoShare.url, (sanitizeFileName(videoShare.title) || 'video') + '.mp4'); }} className="w-full rounded-2xl border border-white/20 p-3 disabled:opacity-40 flex justify-center gap-2"><Download className="w-5 h-5" /> Guardar video en mi celular</button>
+            <p className="text-xs text-slate-400">Selecciona la red en el menú de compartir. Si tu navegador no admite enviar archivos, se descargará el video para que lo publiques manualmente.</p>
+          </section>
+        </div>, document.body
+      )}
+
       {sharePickerSong && (
         <div className="fixed inset-0 z-[280] bg-black/80 backdrop-blur-sm flex items-end md:items-center justify-center">
           <button className="absolute inset-0 w-full h-full" onClick={() => setSharePickerSong(null)} aria-label="Cerrar" />
@@ -3573,6 +3584,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
           onStartCover={() => onStartCover?.(menuSong)}
           onToast={onToast}
           onOpenLists={() => setActiveTab('listas')}
+          onVideoReadyToShare={(taskId, title) => { setMenuSong(null); shareVideoByTaskId(taskId, title).catch(() => {}); }}
           onOpenVideos={() => {
             setActiveTab('video');
             loadVideos().catch(() => {});
@@ -4183,6 +4195,7 @@ function SongOptionsSheet({
   onToast,
   onOpenLists,
   onOpenVideos,
+  onVideoReadyToShare,
   onMoveToFolder,
   onShare,
   onRestore,
@@ -4201,6 +4214,7 @@ function SongOptionsSheet({
   onToast?: (message: string) => void;
   onOpenLists?: () => void;
   onOpenVideos?: () => void;
+  onVideoReadyToShare?: (taskId: string, title: string) => void;
   onMoveToFolder?: () => void;
   onShare?: () => void;
   onRestore: () => void;
@@ -5575,7 +5589,7 @@ function SongOptionsSheet({
     }
   };
 
-  const createMp4 = async (authorName: string) => {
+  const createMp4 = async (authorName: string, shareAfter = false) => {
     setIsBusy(true);
     try {
       const t = await getAccessToken();
@@ -5663,8 +5677,8 @@ function SongOptionsSheet({
           onToast?.('El video terminó, pero no se recibió el enlace.');
           return;
         }
-        onToast?.('¡Tu video está listo! Se abre en una pestaña nueva.');
-        window.open(videoUrl, '_blank');
+        if (shareAfter && onVideoReadyToShare) { onToast?.('¡Tu video está listo para compartir!'); onVideoReadyToShare(mp4TaskId, song.title || 'Mi canción'); }
+        else { onToast?.('¡Tu video está listo! Se abre en una pestaña nueva.'); window.open(videoUrl, '_blank'); }
         return;
       }
 
@@ -6316,7 +6330,7 @@ function SongOptionsSheet({
                         <button className="w-full flex items-center justify-between gap-3 px-4 py-3 border-t border-white/10 hover:bg-white/[0.05] transition-colors" onClick={() => openMp4Modal().catch(() => {})} disabled={isBusy}>
                           <div className="flex items-center gap-3">
                             <Video className="w-5 h-5 text-slate-200" />
-                            <span className="text-slate-100 font-semibold">Video (MP4)</span>
+                            <span className="text-slate-100 font-semibold">Video (MP4) / Compartir en redes</span>
                           </div>
                           <ChevronRight className="w-5 h-5 text-slate-500" />
                         </button>
@@ -6556,7 +6570,7 @@ function SongOptionsSheet({
                         )}
                         <button className="rounded-3xl border border-white/10 bg-white/[0.03] p-4 hover:bg-white/[0.06] transition-colors text-left" onClick={() => openMp4Modal().catch(() => {})} disabled={isBusy}>
                           <Video className="w-5 h-5 text-slate-200" />
-                          <div className="mt-3 text-slate-100 font-semibold text-sm">Video (MP4)</div>
+                          <div className="mt-3 text-slate-100 font-semibold text-sm">Video (MP4) / Compartir en redes</div>
                         </button>
                         {onStartCover ? (
                           <button
@@ -7953,6 +7967,7 @@ function SongOptionsSheet({
               >
                 Crear video
               </button>
+              <button disabled={isBusy} onClick={() => { setShowMp4(false); createMp4(mp4Author, true).catch(() => {}); }} className="w-full rounded-full bg-violet-600 text-white h-[48px] font-extrabold flex items-center justify-center gap-2 disabled:opacity-50"><Share2 className="w-5 h-5" /> Crear video para compartir</button>
               <div className="text-[11px] text-slate-500">El video se guarda 15 días en almacenamiento externo.</div>
             </div>
           </div>
