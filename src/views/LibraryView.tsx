@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { type LibraryTab, type SongItem, type VibeItem } from '@/types';
 import { cn } from '@/lib/utils';
-import { Sparkles, Plus, Image as ImageIcon, ChevronDown, ChevronRight, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, FileText, Video, BadgeCheck, Shield, ListMusic, FolderPlus, X, Scissors, Cast, Volume2, VolumeX, Lock, Copy } from 'lucide-react';
+import { Sparkles, Plus, Image as ImageIcon, ChevronDown, ChevronRight, Play, Pause, ThumbsUp, Settings2, Search, MoreVertical, Share2, Download, Trash2, Flag, Pencil, AudioLines, Repeat2, Sparkle, FileText, Video, BadgeCheck, Shield, ListMusic, Folder, FolderPlus, X, Scissors, Cast, Volume2, VolumeX, Lock, Copy } from 'lucide-react';
 import { ensureAnonSession, getAccessToken, supabaseBrowser } from '@/lib/supabaseBrowser';
 import { clonarVozEnCancion } from '@/lib/clonarVoz';
 import { MOSTRAR_RVC } from '@/lib/features';
@@ -2121,24 +2121,35 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         {/* Top Filters (Me gusta, Publicado, Filtros) */}
         {null}
 
-        {/* Navigation Tabs */}
-        <div className="flex border-b border-white/5 space-x-4 md:space-x-6 overflow-x-auto no-scrollbar">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={cn(
-                "py-2.5 md:py-3 text-sm font-medium relative whitespace-nowrap transition-colors",
-                activeTab === tab.id ? "text-slate-100" : "text-slate-500"
-              )}
-            >
-              {tab.label}
-              {activeTab === tab.id && (
-                <div className="absolute bottom-0 left-0 w-full h-[2px] bg-gradient-to-r from-indigo-400 to-purple-400 rounded-t-full" />
-              )}
-            </button>
-          ))}
-        </div>
+        <nav aria-label="Secciones de la biblioteca" className="grid grid-cols-3 gap-2 px-1 py-2 sm:flex sm:flex-wrap sm:gap-3">
+          {tabs.map((tab) => {
+            const Icon = tab.id === 'video' ? Video : tab.id === 'listas' ? Folder : ListMusic;
+            const selected = activeTab === tab.id;
+            const highlighted = tab.id !== 'canciones';
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "relative isolate inline-flex min-h-12 min-w-0 items-center justify-center gap-1.5 rounded-2xl border px-1.5 py-2 text-center text-sm font-bold leading-tight transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-200 sm:min-w-32 sm:gap-2 sm:px-4",
+                  highlighted
+                    ? selected
+                      ? "border-amber-200 bg-amber-300/20 text-amber-50 shadow-[0_0_17px_rgba(251,191,36,0.45)]"
+                      : "border-amber-400/80 bg-amber-300/5 text-amber-100 shadow-[0_0_9px_rgba(251,191,36,0.25)] hover:bg-amber-300/15"
+                    : selected
+                      ? "border-violet-300 bg-violet-500/30 text-white shadow-[0_0_14px_rgba(167,139,250,0.35)]"
+                      : "border-white/15 bg-white/5 text-slate-200 hover:bg-white/10"
+                )}
+              >
+                {highlighted && <span aria-hidden="true" className="pointer-events-none absolute inset-0 rounded-2xl shadow-[0_0_12px_rgba(251,191,36,0.32)] opacity-30 motion-safe:animate-[pulse_4s_ease-in-out_infinite]" />}
+                <Icon aria-hidden="true" className="h-4 w-4 shrink-0 sm:h-5 sm:w-5" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </nav>
 
         <div className="text-[11px] text-yellow-300">
           Los archivos se conservan durante 14 días.
