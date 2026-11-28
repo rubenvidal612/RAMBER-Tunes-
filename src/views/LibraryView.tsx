@@ -5762,7 +5762,8 @@ function SongOptionsSheet({
             headers: {authorization: `Bearer ${session.token}`},
           });
           const output = await query.json().catch(() => ({}));
-          const status = String(output?.data?.data?.successFlag || output?.data?.data?.status || '').toUpperCase();
+          const record = output?.data?.data?.data || output?.data?.data;
+          const status = String(record?.successFlag || record?.status || '').toUpperCase();
           if (status === 'SUCCESS') { ready = true; break; }
           if (/FAIL|ERROR|EXCEPTION/.test(status)) {
             setKaraokeProgress('Preparando el instrumental con el separador alternativo…');
