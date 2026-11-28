@@ -3405,7 +3405,7 @@ const sunoHandler = (() => {
               const m2 = sunoErrorMessage(dd, tt || "").toLowerCase();
               return !doesNotExistRe.test(m2);
             }
-            const st = String(dd?.data?.status ?? dd?.data?.data?.status ?? "").toUpperCase();
+            const st = String(dd?.data?.successFlag ?? dd?.data?.status ?? dd?.data?.data?.successFlag ?? dd?.data?.data?.status ?? "").toUpperCase();
             if (!st) return false;
             if (doesNotExistRe.test(String(tt || "").toLowerCase()) || doesNotExistRe.test(String(dd?.message || dd?.msg || "").toLowerCase())) return false;
             return st === "SUCCESS" || st === "PENDING" || st === "QUEUED" || st === "PROCESSING" || st === "RUNNING";
@@ -3538,7 +3538,7 @@ const sunoHandler = (() => {
               const m2 = sunoErrorMessage(dd, tt || "").toLowerCase();
               return !doesNotExistRe.test(m2);
             }
-            const st = String(dd?.data?.status ?? dd?.data?.data?.status ?? "").toUpperCase();
+            const st = String(dd?.data?.successFlag ?? dd?.data?.status ?? dd?.data?.data?.successFlag ?? dd?.data?.data?.status ?? "").toUpperCase();
             if (!st) return false;
             if (doesNotExistRe.test(String(tt || "").toLowerCase()) || doesNotExistRe.test(String(dd?.message || dd?.msg || "").toLowerCase())) return false;
             return st === "SUCCESS" || st === "PENDING" || st === "QUEUED" || st === "PROCESSING" || st === "RUNNING";
