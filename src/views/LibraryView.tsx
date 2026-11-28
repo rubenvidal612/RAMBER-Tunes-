@@ -4328,6 +4328,21 @@ function SongOptionsSheet({
   const [shareBusy, setShareBusy] = useState(false);
   const [shareMsg, setShareMsg] = useState('');
   const [mp4Author, setMp4Author] = useState('');
+  const [videoPhoto, setVideoPhoto] = useState('');
+  const [videoFrame, setVideoFrame] = useState('9:16');
+  const [videoZoom, setVideoZoom] = useState(1);
+  const [videoX, setVideoX] = useState(0);
+  const [videoY, setVideoY] = useState(0);
+  useEffect(() => () => { if (videoPhoto) URL.revokeObjectURL(videoPhoto); }, [videoPhoto]);
+  useEffect(() => {
+    if (!showMp4) {
+      setVideoPhoto('');
+      setVideoFrame('9:16');
+      setVideoZoom(1);
+      setVideoX(0);
+      setVideoY(0);
+    }
+  }, [showMp4]);
   const [mp4WatermarkDisabled, setMp4WatermarkDisabled] = useState(false);
   const [showLicense, setShowLicense] = useState(false);
   const [showLicenseBlocked, setShowLicenseBlocked] = useState(false);
@@ -8025,6 +8040,45 @@ function SongOptionsSheet({
               </button>
             </div>
             <div className="p-4 flex-1 overflow-y-auto overscroll-contain space-y-3">
+              <details className="rounded-2xl border border-violet-400/35 bg-violet-500/10 p-3">
+                <summary className="cursor-pointer font-bold text-violet-100">Probar mi foto en los formatos de video</summary>
+                <div className="mt-3 space-y-3">
+                  <p className="text-sm text-slate-300">Vista previa local. El botón Crear video usa el fondo automático de Suno.</p>
+                  <input type="file" aria-label="Elegir foto para la vista previa" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                    className="block w-full text-sm file:mr-2 file:rounded-xl file:border-0 file:bg-violet-700 file:px-3 file:py-2 file:text-white"
+                    onChange={(event) => {
+                      const file = event.currentTarget.files?.[0];
+                      if (!file) return;
+                      if (!/\.(jpe?g|png|webp)$/i.test(file.name)) {
+                        onToast?.('Elige una imagen JPG, PNG o WebP.');
+                        return;
+                      }
+                      setVideoPhoto(URL.createObjectURL(file));
+                    }} />
+                  <div className="grid grid-cols-3 gap-2" aria-label="Formatos de video">
+                    {[['9:16', 'Vertical'], ['1:1', 'Cuadrado'], ['16:9', 'Horizontal']].map(([ratio, label]) => (
+                      <button type="button" key={ratio} aria-pressed={videoFrame === ratio}
+                        className={cn("flex min-w-0 flex-col items-center justify-center gap-2 rounded-xl border p-2 text-xs", videoFrame === ratio ? "border-violet-300 bg-violet-500/25" : "border-white/15 bg-black/25")}
+                        onClick={() => setVideoFrame(ratio)}>
+                        <div className="flex h-16 w-full items-center justify-center">
+                          <div className="relative overflow-hidden rounded border border-white/30 bg-black/40" style={{ aspectRatio: ratio.replace(':', '/'), width: ratio === '9:16' ? 30 : ratio === '1:1' ? 49 : 64 }}>
+                            {videoPhoto && <img src={videoPhoto} alt="" className="absolute inset-0 h-full w-full object-cover" style={{ transform: `translate(${videoX}%, ${videoY}%) scale(${videoZoom})` }} />}
+                          </div>
+                        </div>
+                        <span>{label} {ratio}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {videoPhoto && <>
+                    <div className="relative mx-auto h-44 overflow-hidden rounded-xl border border-white/15 bg-black" style={{ aspectRatio: videoFrame.replace(':', '/'), maxWidth: '100%' }}>
+                      <img src={videoPhoto} alt="Vista previa de la foto recortada" className="absolute inset-0 h-full w-full object-cover" style={{ transform: `translate(${videoX}%, ${videoY}%) scale(${videoZoom})` }} />
+                    </div>
+                    <label className="block text-sm">Zoom <input className="block w-full" type="range" min="1" max="3" step=".05" value={videoZoom} onChange={e => setVideoZoom(Number(e.target.value))} /></label>
+                    <label className="block text-sm">Mover horizontalmente <input className="block w-full" type="range" min="-30" max="30" value={videoX} onChange={e => setVideoX(Number(e.target.value))} /></label>
+                    <label className="block text-sm">Mover verticalmente <input className="block w-full" type="range" min="-30" max="30" value={videoY} onChange={e => setVideoY(Number(e.target.value))} /></label>
+                  </>}
+                </div>
+              </details>
               <div className="text-slate-300 text-sm">Autor (opcional)</div>
               <input
                 value={mp4Author}
