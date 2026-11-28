@@ -1249,6 +1249,13 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     const b = provider?.data?.data?.response || {};
     const c = provider?.data?.data?.data?.response || {};
     return pickFirst(
+      provider?.data?.audioId,
+      provider?.data?.data?.audioId,
+      provider?.data?.audio_id,
+      provider?.data?.data?.audio_id,
+      provider?.data?.param?.audioId,
+      provider?.data?.data?.param?.audioId,
+      (() => { try { const p = provider?.data?.param || provider?.data?.data?.param; return typeof p === 'string' ? JSON.parse(p)?.audioId : p?.audioId; } catch { return ''; } })(),
       a?.audioId,
       b?.audioId,
       c?.audioId,
@@ -1385,7 +1392,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       return;
     }
     const entry = videoTasks.find(v => v.taskId === taskId);
-    const audioId = pickMp4AudioId(provider) || entry?.audioId;
+    const audioId = entry?.audioId || pickMp4AudioId(provider);
     const song = canciones.find(s => audioId && s.sunoAudioId === audioId);
     const title = song?.title || videoTitles[taskId] || entry?.title || pickMp4Title(provider) || 'Video musical';
     setVideoPreview({taskId, url: normalizePublicUrl(videoUrl), title, poster: normalizePublicUrl(thumbUrl || song?.coverUrl || entry?.cover || '')});
@@ -2178,12 +2185,12 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     return d.toLocaleString('es-MX', { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
                   })();
                   const meta = videoMeta[v.taskId];
-                  const audioId = meta?.audioId || v.audioId;
+                  const audioId = v.audioId || meta?.audioId;
                   const song = canciones.find(s => audioId && s.sunoAudioId === audioId);
                   const title = song?.title || videoTitles[v.taskId] || v.title || 'Video musical';
                   const providerThumb = normalizePublicUrl(videoThumbs[v.taskId] || '');
                   const songThumb = normalizePublicUrl(song?.coverUrl || v.cover || '');
-                  const thumb = (!videoBrokenThumbs[providerThumb] && providerThumb) || (!videoBrokenThumbs[songThumb] && songThumb) || makeFallbackCoverSvgUrl(title + v.taskId);
+                  const thumb = (!videoBrokenThumbs[providerThumb] && providerThumb) || (!videoBrokenThumbs[songThumb] && songThumb) || makeFallbackCoverSvgUrl(title);
                   const duration = meta?.duration;
                   const durationText = duration && Number.isFinite(duration) ? Math.floor(duration / 60) + ':' + String(Math.floor(duration % 60)).padStart(2, '0') : '';
                   const status = meta?.status || '';
