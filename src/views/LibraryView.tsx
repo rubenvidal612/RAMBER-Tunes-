@@ -123,9 +123,13 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
-  const [videoTasks, setVideoTasks] = useState<Array<{ taskId: string; createdAt?: string }>>([]);
+  const [videoTasks, setVideoTasks] = useState<Array<{ taskId: string; createdAt?: string; audioId?: string; title?: string; cover?: string }>>([]);
   const [videoThumbs, setVideoThumbs] = useState<Record<string, string>>({});
   const [videoTitles, setVideoTitles] = useState<Record<string, string>>({});
+  const [videoMeta, setVideoMeta] = useState<Record<string, { audioId?: string; url?: string; status?: string; duration?: number }>>({});
+  const [videoPreview, setVideoPreview] = useState<{taskId: string; url: string; title: string; poster?: string} | null>(null);
+  const [videoOpening, setVideoOpening] = useState<string | null>(null);
+  const [videoBrokenThumbs, setVideoBrokenThumbs] = useState<Record<string, boolean>>({});
   const [videoLoading, setVideoLoading] = useState(false);
   const [videoError, setVideoError] = useState('');
   const [openVideoMenuId, setOpenVideoMenuId] = useState<string | null>(null);
@@ -625,7 +629,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       }
       const items = Array.isArray(out?.items) ? out.items : [];
       const list = items
-        .map((x: any) => ({ taskId: String(x?.taskId || '').trim(), createdAt: String(x?.created_at || '').trim() }))
+        .map((x: any) => ({ taskId: String(x?.taskId || '').trim(), createdAt: String(x?.created_at || '').trim(), audioId: String(x?.audioId || x?.audio_id || x?.source_audio_id || x?.suno_audio_id || '').trim(), title: String(x?.title || x?.song_title || '').trim(), cover: String(x?.coverUrl || x?.cover_url || '').trim() }))
         .filter((x: any) => x.taskId);
       setVideoTasks(list);
     } finally {
@@ -1293,7 +1297,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     const ids = tasks
       .map((x) => x.taskId)
       .filter((id) => id && (!videoThumbs[id] || !videoTitles[id]))
-      .slice(0, 12);
+      .slice(0, 60);
     if (ids.length === 0) return;
 
     const t = await getAccessToken();
@@ -1308,12 +1312,16 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         if (!tr.ok) continue;
         const provider = tout?.data;
         const thumbUrl = pickMp4ThumbUrl(provider);
+        const audioId = pickMp4AudioId(provider);
+        const status = String(provider?.data?.successFlag || provider?.data?.status || provider?.data?.data?.successFlag || provider?.data?.data?.status || '').toUpperCase();
+        const url = normalizePublicUrl(pickFirst(provider?.data?.response?.videoUrl, provider?.data?.data?.response?.videoUrl, provider?.data?.response?.video_url, provider?.data?.data?.response?.video_url, provider?.data?.data?.data?.response?.videoUrl));
+        const duration = Number(provider?.data?.response?.duration || provider?.data?.data?.response?.duration || 0);
+        setVideoMeta(prev => ({...prev, [id]: {...prev[id], audioId, status, url, ...(Number.isFinite(duration) && duration > 0 ? {duration} : {})}}));
         if (thumbUrl) {
           setVideoThumbs((prev) => (prev[id] ? prev : { ...prev, [id]: thumbUrl }));
         }
 
         let title = '';
-        const audioId = pickMp4AudioId(provider);
         if (audioId) {
           const found = (Array.isArray(canciones) ? canciones : []).find((s) => String((s as any)?.sunoAudioId || '').trim() === String(audioId || '').trim());
           title = String((found as any)?.title || '').trim();
@@ -1328,6 +1336,8 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
   };
 
   const openVideoByTaskId = async (taskId: string) => {
+    setVideoOpening(taskId);
+    try {
     const t = await getAccessToken();
     if (!t.ok) {
       alert(t.error || 'No se pudo iniciar sesión.');
@@ -1374,7 +1384,12 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
       alert('El video terminó, pero no recibí el link.');
       return;
     }
-    window.open(videoUrl, '_blank');
+    const entry = videoTasks.find(v => v.taskId === taskId);
+    const audioId = pickMp4AudioId(provider) || entry?.audioId;
+    const song = canciones.find(s => audioId && s.sunoAudioId === audioId);
+    const title = song?.title || videoTitles[taskId] || entry?.title || pickMp4Title(provider) || 'Video musical';
+    setVideoPreview({taskId, url: normalizePublicUrl(videoUrl), title, poster: normalizePublicUrl(thumbUrl || song?.coverUrl || entry?.cover || '')});
+    } finally { setVideoOpening(null); }
   };
 
   const downloadVideoByTaskId = async (taskId: string) => {
@@ -2162,25 +2177,33 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                     if (Number.isNaN(d.getTime())) return '';
                     return d.toLocaleString('es-MX', { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
                   })();
-                  const thumb = normalizePublicUrl((videoThumbs[v.taskId] || '').toString().trim());
-                  const title = (videoTitles[v.taskId] || '').toString().trim() || 'Video';
+                  const meta = videoMeta[v.taskId];
+                  const audioId = meta?.audioId || v.audioId;
+                  const song = canciones.find(s => audioId && s.sunoAudioId === audioId);
+                  const title = song?.title || videoTitles[v.taskId] || v.title || 'Video musical';
+                  const providerThumb = normalizePublicUrl(videoThumbs[v.taskId] || '');
+                  const songThumb = normalizePublicUrl(song?.coverUrl || v.cover || '');
+                  const thumb = (!videoBrokenThumbs[providerThumb] && providerThumb) || (!videoBrokenThumbs[songThumb] && songThumb) || makeFallbackCoverSvgUrl(title + v.taskId);
+                  const duration = meta?.duration;
+                  const durationText = duration && Number.isFinite(duration) ? Math.floor(duration / 60) + ':' + String(Math.floor(duration % 60)).padStart(2, '0') : '';
+                  const status = meta?.status || '';
+                  const ready = status === 'SUCCESS';
                   return (
-                    <div key={v.taskId} className="glass-card rounded-2xl p-4 border border-white/10 flex items-center justify-between gap-3">
+                    <div key={v.taskId} className="glass-card rounded-2xl p-3 sm:p-4 border border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <button
-                        onClick={() => openVideoByTaskId(v.taskId).catch(() => {})}
+                        disabled={videoOpening === v.taskId}
+                        onClick={() => openVideoByTaskId(v.taskId).catch(() => onToast?.('No se pudo abrir el video.'))}
                         className="flex items-center gap-3 min-w-0 text-left"
                       >
-                        <div className="w-[84px] h-[56px] rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
-                          {thumb ? (
-                            <img src={thumb} alt="Miniatura" className="w-full h-full object-cover" />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center text-slate-500">
-                              <Video className="w-5 h-5" />
-                            </div>
-                          )}
+                        <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
+                          <img src={thumb} alt="" loading="lazy" onError={() => setVideoBrokenThumbs(prev => ({...prev, [thumb]: true}))} className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 flex items-center justify-center bg-black/20"><span className="rounded-full bg-black/60 p-3"><Play className="w-5 h-5 text-white fill-white" /></span></div>
+                          {durationText && <span className="absolute bottom-1 right-1 rounded bg-black/80 px-1.5 py-0.5 text-xs text-white">{durationText}</span>}
                         </div>
                         <div className="min-w-0">
-                          <div className="text-white font-bold truncate">{title}</div>
+                          <div className="text-white font-bold text-base break-words">{title}</div>
+                          <div className="text-xs text-slate-400 mt-1">Video musical · MP4{durationText ? ' · ' + durationText : ''}</div>
+                          <div className={cn("text-xs mt-1", ready ? "text-emerald-300" : "text-slate-400")}>{videoOpening === v.taskId ? 'Abriendo video…' : ready ? 'Listo para compartir' : status.includes('FAIL') ? 'No se pudo crear' : status ? 'Procesando video…' : 'Consultar video'}</div>
                           {dateText ? <div className="text-[11px] text-slate-500 mt-1">{dateText}</div> : null}
                         </div>
                       </button>
@@ -2190,16 +2213,16 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                             e.stopPropagation();
                             downloadVideoByTaskId(v.taskId).catch(() => {});
                           }}
-                          className="bg-white/5 border border-white/10 rounded-full p-2 text-slate-200 hover:bg-white/10 transition-colors hidden sm:flex items-center justify-center"
+                          className="bg-white/5 border border-white/10 rounded-full px-3 py-2 text-slate-200 hover:bg-white/10 transition-colors flex items-center justify-center gap-2"
                           title="Descargar"
                         >
-                          <Download className="w-4 h-4" />
+                          <Download className="w-4 h-4" /><span className="text-xs font-semibold">Descargar</span>
                         </button>
                         <button
                           onClick={() => shareVideoByTaskId(v.taskId, title).catch(() => {})}
                           className="bg-violet-600 hover:bg-violet-500 rounded-full px-3 py-2 text-white flex items-center gap-2"
                           aria-label="Compartir video en redes sociales"
-                        ><Share2 className="w-4 h-4" /><span className="hidden sm:inline text-sm font-bold">Compartir</span></button>
+                        ><Share2 className="w-4 h-4" /><span className="text-xs font-bold">Compartir</span></button>
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -3332,6 +3355,17 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
             setMoveFolderSong(null);
           }}
         />
+      )}
+
+      {videoPreview && createPortal(
+        <div className="fixed inset-0 z-[9998] bg-black/80 flex items-center justify-center p-3" role="dialog" aria-modal="true" aria-label="Reproductor de video">
+          <button className="absolute inset-0" aria-label="Cerrar video" onClick={() => setVideoPreview(null)} />
+          <section className="relative w-full max-w-2xl rounded-3xl bg-[#10121d] border border-white/10 p-4 space-y-3 text-white">
+            <div className="flex items-center justify-between gap-2"><h2 className="font-bold text-lg break-words">{videoPreview.title}</h2><button className="rounded-full bg-white/10 p-3" aria-label="Cerrar" onClick={() => setVideoPreview(null)}><X className="w-5 h-5"/></button></div>
+            <video key={videoPreview.taskId} src={videoPreview.url} poster={videoPreview.poster || undefined} controls autoPlay playsInline className="w-full max-h-[65vh] bg-black rounded-xl" onLoadedMetadata={e => { const duration = e.currentTarget.duration; const id = videoPreview.taskId; if (Number.isFinite(duration) && duration > 0) setVideoMeta(prev => ({...prev, [id]: {...prev[id], duration}})); }} onError={() => onToast?.('No se pudo reproducir el video. Intenta actualizar la biblioteca.')} />
+            <button className="w-full rounded-xl bg-violet-600 p-3 font-bold flex items-center justify-center gap-2" onClick={() => { const current = videoPreview; setVideoPreview(null); shareVideoByTaskId(current.taskId, current.title).catch(() => {}); }}><Share2 className="w-5 h-5"/>Compartir en redes</button>
+          </section>
+        </div>, document.body
       )}
 
       {videoShare && createPortal(
