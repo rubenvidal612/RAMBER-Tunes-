@@ -6870,8 +6870,6 @@ function SongOptionsSheet({
             </details>
           </div>
         </div>
-      </div>
-
       {showPersonaSave && (
         <div className="absolute inset-0 bg-black/70 flex items-end md:items-center justify-center">
           <button className="absolute inset-0 w-full h-full" onClick={() => setShowPersonaSave(false)} aria-label="Cerrar" />
