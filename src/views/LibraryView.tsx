@@ -5702,12 +5702,19 @@ function SongOptionsSheet({
   };
 
   const createPhotoMp4 = async () => {
-    if (!videoPhoto || isBusy) return;
+    if ((photoMode && !videoPhoto) || isBusy) return;
     setIsBusy(true);
     try {
       const image = new Image();
-      image.src = videoPhoto;
-      await image.decode();
+      if (!photoMode) image.crossOrigin = 'anonymous';
+      image.src = photoMode ? videoPhoto : coverSrc;
+      try {
+        await image.decode();
+      } catch (error) {
+        if (photoMode) throw error;
+        image.src = makeFallbackCoverSvgUrl(song.title || String(song.id));
+        await image.decode();
+      }
       const canvas = document.createElement('canvas');
       canvas.width = videoFrame === '16:9' ? 1280 : 720;
       canvas.height = videoFrame === '9:16' ? 1280 : 720;
@@ -5716,12 +5723,12 @@ function SongOptionsSheet({
       const {width, height} = canvas;
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, width, height);
-      const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight) * videoZoom;
+      const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight) * (photoMode ? videoZoom : 1);
       const w = image.naturalWidth * scale;
       const h = image.naturalHeight * scale;
-      ctx.drawImage(image, (width-w)/2 + width*videoX/100, (height-h)/2 + height*videoY/100, w, h);
+      ctx.drawImage(image, (width-w)/2 + (photoMode ? width*videoX/100 : 0), (height-h)/2 + (photoMode ? height*videoY/100 : 0), w, h);
       const title = videoTitle.trim() || song.title || 'Video musical';
-      const lines = [showVideoTitle ? title : '', showVideoArtist ? mp4Author.trim() : '', videoDedication.trim(), 'LucIAna Music'].filter(Boolean);
+      const lines = [showVideoTitle ? title : '', showVideoArtist ? mp4Author.trim() : '', photoMode ? videoDedication.trim() : '', 'LucIAna Music'].filter(Boolean);
       ctx.fillStyle = '#000a';
       ctx.fillRect(0, height - 46 * lines.length - 20, width, 46 * lines.length + 20);
       ctx.fillStyle = '#fff';
@@ -5775,7 +5782,7 @@ function SongOptionsSheet({
       if (!response.ok || !result.taskId) throw new Error(result.error || 'No pude crear el video con tu foto.');
       setShowMp4(false);
       onOpenVideos?.();
-      onToast?.('Tu video con foto ya está en la pestaña Video.');
+      onToast?.('Tu video ya está en la pestaña Video.');
     } catch (error) {
       onToast?.(error instanceof Error ? error.message : 'No pude crear el video con tu foto.');
     } finally { setKaraokeProgress(''); setIsBusy(false); }
@@ -8168,9 +8175,8 @@ function SongOptionsSheet({
                 className="w-full glass-card rounded-xl p-3 text-sm text-white placeholder:text-slate-500 outline-none"
               />
               <div className="text-slate-400 text-xs">
-                {photoMode ? 'Marca de agua: LucIAna.' : mp4WatermarkDisabled ? 'Marca de agua: sin LucIAna (Plan Productor).' : 'Marca de agua: LucIAna.'}
+                {photoMode || karaokeVideo ? 'Marca de agua: LucIAna.' : mp4WatermarkDisabled ? 'Marca de agua: sin LucIAna (Plan Productor).' : 'Marca de agua: LucIAna.'}
               </div>
-              {photoMode ? <>
                 <fieldset disabled={isBusy} className="space-y-2">
                   <legend className="font-bold">Audio del video</legend>
                   <select aria-label="Audio del video" value={karaokeVideo ? 'karaoke' : 'voice'} onChange={e => {
@@ -8179,12 +8185,14 @@ function SongOptionsSheet({
                     if (karaoke) setVideoLyrics(true);
                   }} className="w-full rounded-xl bg-slate-800 p-3">
                     <option value="voice">Con voz original</option>
-                    <option value="karaoke" disabled={song.isCover || !song.sunoTaskId || !song.sunoAudioId}>Karaoke sin voz</option>
+                    <option value="karaoke" disabled={song.isCover || !song.sunoTaskId || !song.sunoAudioId || String(song.sunoTaskId).startsWith('treblo:')}>Karaoke sin voz</option>
                   </select>
-                  <label className="block text-sm"><input type="checkbox" checked={videoLyrics} onChange={e => setVideoLyrics(e.target.checked)} /> Mostrar letra sincronizada</label>
+                  {(photoMode || karaokeVideo) && <label className="block text-sm"><input type="checkbox" checked={videoLyrics} onChange={e => setVideoLyrics(e.target.checked)} /> Mostrar letra sincronizada</label>}
                 </fieldset>
+              {karaokeVideo && !photoMode && <p className="text-sm text-slate-300">El video usará la portada de la canción.</p>}
+              {photoMode || karaokeVideo ? <>
                 <p className="text-sm text-slate-300">Video: 2 créditos{videoLyrics ? ' · Letra sincronizada: 0.4 créditos' : ''}{karaokeVideo && !videoInstrumentalRef.current ? ' · Separar voz si hace falta: 10 créditos' : ''}.</p>
-                <button type="button" disabled={!videoPhoto || isBusy} onClick={() => void createPhotoMp4()} className="w-full rounded-full bg-violet-600 text-white min-h-12 font-bold disabled:opacity-50">
+                <button type="button" disabled={(photoMode && !videoPhoto) || isBusy} onClick={() => void createPhotoMp4()} className="w-full rounded-full bg-violet-600 text-white min-h-12 font-bold disabled:opacity-50">
                   {isBusy ? karaokeProgress || 'Preparando tu video…' : karaokeVideo ? 'Crear video karaoke' : 'Crear video con mi foto'}
                 </button>
               </> : <>
