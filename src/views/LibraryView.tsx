@@ -4331,6 +4331,7 @@ function SongOptionsSheet({
   const [karaokeVideo, setKaraokeVideo] = useState(false);
   const [videoLyrics, setVideoLyrics] = useState(false);
   const videoInstrumentalRef = useRef('');
+  useEffect(() => { videoInstrumentalRef.current = ''; }, [song.id]);
   const [karaokeProgress, setKaraokeProgress] = useState('');
   const [photoMode, setPhotoMode] = useState(false);
   const [showVideoTitle, setShowVideoTitle] = useState(true);
@@ -5739,7 +5740,7 @@ function SongOptionsSheet({
           const separation = await fetch('/api/suno/separate', {
             method: 'POST',
             headers: {'content-type': 'application/json', authorization: `Bearer ${session.token}`},
-            body: JSON.stringify({taskId: song.sunoTaskId, audioId: song.sunoAudioId, type: 'separate_vocal'}),
+            body: JSON.stringify({taskId: song.sunoTaskId, audioId: song.sunoAudioId, type: 'separate_vocal', reuseForVideo: true}),
           });
           const result = await separation.json().catch(() => ({}));
           if (!separation.ok || !result.taskId) throw new Error(result.error || 'No pude separar la voz.');
@@ -8208,7 +8209,7 @@ function SongOptionsSheet({
                   </select>
                   <label className="block text-sm"><input type="checkbox" checked={videoLyrics} onChange={e => setVideoLyrics(e.target.checked)} /> Mostrar letra sincronizada</label>
                 </fieldset>
-                <p className="text-sm text-slate-300">Video: 2 créditos{videoLyrics ? ' · Letra sincronizada: 0.4 créditos' : ''}{karaokeVideo && !videoInstrumentalRef.current ? ' · Separar voz: 10 créditos' : ''}.</p>
+                <p className="text-sm text-slate-300">Video: 2 créditos{videoLyrics ? ' · Letra sincronizada: 0.4 créditos' : ''}{karaokeVideo && !videoInstrumentalRef.current ? ' · Separar voz si hace falta: 10 créditos' : ''}.</p>
                 <button type="button" disabled={!videoPhoto || isBusy} onClick={() => void createPhotoMp4()} className="w-full rounded-full bg-violet-600 text-white min-h-12 font-bold disabled:opacity-50">
                   {isBusy ? karaokeProgress || 'Preparando tu video…' : karaokeVideo ? 'Crear video karaoke' : 'Crear video con mi foto'}
                 </button>

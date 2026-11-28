@@ -3332,6 +3332,19 @@ const sunoHandler = (() => {
       }
     }
 
+    if (payload.reuseForVideo === true && effectiveAudioId && type === "separate_vocal") {
+      const { data: tasks } = await auth.admin.from("suno_tasks").select("task_id")
+        .eq("user_id", auth.user.id).eq("kind", "vocal-removal:separate_vocal")
+        .eq("extra->>karaoke_source_audio_id", effectiveAudioId)
+        .order("created_at", { ascending: false }).limit(3);
+      for (const task of tasks || []) {
+        try {
+          const existing = await sunoFetchJson("/api/v1/vocal-removal/record-info?taskId=" + encodeURIComponent(task.task_id), { method: "GET" });
+          if (existing.res.ok && existing.data?.data?.response?.instrumentalUrl) return send(res, 200, { taskId: task.task_id, reused: true });
+        } catch {}
+      }
+    }
+
     const callBackUrl = absoluteUrlFromReq(req, "/api/webhooks/suno");
     const body = { taskId: effectiveTaskId, audioId: effectiveAudioId, type, callBackUrl };
 
