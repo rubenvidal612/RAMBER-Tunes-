@@ -1329,6 +1329,20 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
         }
 
         let title = '';
+        const params = provider?.data?.data?.param || provider?.data?.param;
+        let request = params;
+        if (typeof params === 'string') {
+          try { request = JSON.parse(params); } catch { request = null; }
+        }
+        const sourceTaskId = pickFirst(request?.taskId, request?.task_id, provider?.data?.sourceTaskId);
+        if (!audioId && sourceTaskId) {
+          const candidates = canciones.filter((song) => song.sunoTaskId === sourceTaskId);
+          if (candidates.length === 1) {
+            title = candidates[0].title;
+            const cover = candidates[0].coverUrl;
+            if (cover) setVideoThumbs(prev => prev[id] ? prev : { ...prev, [id]: cover });
+          }
+        }
         if (audioId) {
           const found = (Array.isArray(canciones) ? canciones : []).find((s) => String((s as any)?.sunoAudioId || '').trim() === String(audioId || '').trim());
           title = String((found as any)?.title || '').trim();
@@ -1394,7 +1408,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
     const entry = videoTasks.find(v => v.taskId === taskId);
     const audioId = entry?.audioId || pickMp4AudioId(provider);
     const song = canciones.find(s => audioId && s.sunoAudioId === audioId);
-    const title = song?.title || videoTitles[taskId] || entry?.title || pickMp4Title(provider) || 'Video musical';
+    const title = entry?.title || song?.title || videoTitles[taskId] || pickMp4Title(provider) || 'Video musical';
     setVideoPreview({taskId, url: normalizePublicUrl(videoUrl), title, poster: normalizePublicUrl(thumbUrl || song?.coverUrl || entry?.cover || '')});
     } finally { setVideoOpening(null); }
   };
@@ -2198,7 +2212,7 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                   const meta = videoMeta[v.taskId];
                   const audioId = v.audioId || meta?.audioId;
                   const song = canciones.find(s => audioId && s.sunoAudioId === audioId);
-                  const title = song?.title || videoTitles[v.taskId] || v.title || 'Video musical';
+                  const title = v.title || song?.title || videoTitles[v.taskId] || 'Video musical';
                   const providerThumb = normalizePublicUrl(videoThumbs[v.taskId] || '');
                   const songThumb = normalizePublicUrl(song?.coverUrl || v.cover || '');
                   const thumb = (!videoBrokenThumbs[providerThumb] && providerThumb) || (!videoBrokenThumbs[songThumb] && songThumb) || makeFallbackCoverSvgUrl(title);
@@ -2214,7 +2228,21 @@ export function LibraryView({ canciones, cancionesEliminadas, vibes, onAddVibe, 
                         className="flex items-center gap-3 min-w-0 text-left"
                       >
                         <div className="relative w-24 h-24 sm:w-28 sm:h-28 rounded-xl overflow-hidden bg-white/5 border border-white/10 shrink-0">
-                          <img src={thumb} alt="" loading="lazy" onError={() => setVideoBrokenThumbs(prev => ({...prev, [thumb]: true}))} className="w-full h-full object-cover" />
+                          {ready && meta?.url && !videoBrokenThumbs[meta.url] && thumb !== providerThumb && thumb !== songThumb ? (
+                            <video
+                              src={meta.url.split('#')[0] + '#t=0.1'}
+                              poster={thumb}
+                              preload="metadata"
+                              muted
+                              playsInline
+                              aria-hidden="true"
+                              onLoadedData={(e) => e.currentTarget.removeAttribute('poster')}
+                              onError={() => setVideoBrokenThumbs(prev => ({ ...prev, [meta.url!]: true }))}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <img src={thumb} alt="" loading="lazy" onError={() => setVideoBrokenThumbs(prev => ({...prev, [thumb]: true}))} className="w-full h-full object-cover" />
+                          )}
                           <div className="absolute inset-0 flex items-center justify-center bg-black/20"><span className="rounded-full bg-black/60 p-3"><Play className="w-5 h-5 text-white fill-white" /></span></div>
                           {durationText && <span className="absolute bottom-1 right-1 rounded bg-black/80 px-1.5 py-0.5 text-xs text-white">{durationText}</span>}
                         </div>

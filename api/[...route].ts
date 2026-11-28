@@ -3845,7 +3845,13 @@ const sunoHandler = (() => {
         return send(res, 502, { error: "Respuesta inválida del proveedor" });
       }
 
-      const savedVideo = await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: "mp4", cost, consumed: true, extra: { video_source_audio_id: audioId, video_source_task_id: taskId } });
+      const source = await auth.admin.from("library_items")
+        .select("title, cover_url")
+        .eq("user_id", user.id)
+        .eq("suno_audio_id", audioId)
+        .limit(1)
+        .maybeSingle();
+      const savedVideo = await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: "mp4", cost, consumed: true, extra: { video_source_audio_id: audioId, video_source_task_id: taskId, video_title: source.data?.title || "", video_cover_url: source.data?.cover_url || "" } });
       if (savedVideo.error) { console.warn("[mp4] error guardando tarea", savedVideo.error.message); await auth.admin.from("suno_tasks").insert({ task_id: outTaskId, user_id: user.id, kind: "mp4", cost, consumed: true }); }
       return send(res, 200, { taskId: outTaskId });
     } catch (e) {
@@ -15830,6 +15836,8 @@ const videosHandler = (() => {
             taskId: String(x?.task_id || "").trim(),
             created_at: typeof x?.created_at === "string" ? x.created_at : "",
             audioId: String(x?.extra?.video_source_audio_id || ""),
+            title: String(x?.extra?.video_title || ""),
+            coverUrl: String(x?.extra?.video_cover_url || ""),
           }))
           .filter((x: any) => x.taskId);
 
