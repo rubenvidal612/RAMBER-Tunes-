@@ -5765,14 +5765,15 @@ function SongOptionsSheet({
           const status = String(output?.data?.data?.successFlag || output?.data?.data?.status || '').toUpperCase();
           if (status === 'SUCCESS') { ready = true; break; }
           if (/FAIL|ERROR|EXCEPTION/.test(status)) {
-            videoInstrumentalRef.current = '';
-            throw new Error('No se pudo separar la voz.');
+            setKaraokeProgress('Preparando el instrumental con el separador alternativo…');
+            ready = true;
+            break;
           }
           await new Promise(resolve => setTimeout(resolve, 3500));
         }
         if (!ready) throw new Error('La pista sin voz sigue procesándose. Vuelve a intentarlo en un momento.');
       }
-      setKaraokeProgress('Creando tu video…');
+      setKaraokeProgress(current => current.includes('alternativo') ? current : 'Creando tu video…');
       const response = await fetch('/api/suno/mp4', {
         method: 'POST',
         headers: {'content-type': 'application/json', authorization: `Bearer ${session.token}`},
